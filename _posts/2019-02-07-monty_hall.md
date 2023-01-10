@@ -1,7 +1,7 @@
 ---
 layout: post
 title: The Monty Hall problem - an explanation that actually makes sense
-published: true
+published: false
 ---
 My explanation for a classic problem which, in my opinion, makes more sense than most explanations found online.
 <!--break-->
