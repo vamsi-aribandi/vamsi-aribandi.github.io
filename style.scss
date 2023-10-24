@@ -24,6 +24,9 @@ body {
 	background: $white;
   font: 18px/1.4 $helvetica;
   color: $darkGray;
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
 }
 
 .container {
@@ -31,6 +34,7 @@ body {
   max-width: 740px;
   padding: 0 10px;
   width: 100%;
+  flex: 1;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -154,7 +158,7 @@ img {
 //
 
 .wrapper-masthead {
-  margin-bottom: 50px;
+  margin-bottom: 20px;
 }
 
 .masthead {
