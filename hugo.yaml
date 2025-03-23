@@ -41,3 +41,8 @@ menus:
 params:
   dateFormat: Jan 02, 2006 # See https://gohugo.io/functions/time/format/
   author: vamsi aribandi # Default author, supports single value or list, used in single page
+
+# gh pages: https://gohugo.io/host-and-deploy/host-on-github-pages/
+caches:
+  images:
+    dir: :cacheDir/images
