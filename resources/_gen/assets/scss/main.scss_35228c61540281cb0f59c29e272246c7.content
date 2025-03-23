@@ -658,7 +658,10 @@ pre:not(.chroma),
 
 .body {
   font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", "Consolas", monospace;
-  line-height: 1.5; }
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh; }
 
 p,
 ul,
@@ -761,4 +764,5 @@ pre {
   font-size: 0.875rem; }
 
 .footer {
-  font-size: smaller; }
+  font-size: smaller;
+  bottom: 0; }

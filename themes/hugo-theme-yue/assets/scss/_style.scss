@@ -6,6 +6,9 @@
 .body {
   font-family: $font-family;
   line-height: $line-height;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh; // Ensures the body takes the full height of the viewport
 }
 
 p,
@@ -177,4 +180,5 @@ pre {
 
 .footer {
   font-size: smaller;
+  bottom: 0;
 }
