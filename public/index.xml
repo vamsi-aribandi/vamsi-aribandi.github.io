@@ -13,7 +13,7 @@
       <link>http://localhost:1313/about/</link>
       <pubDate>Thu, 27 Jun 2024 23:14:15 +0800</pubDate>
       <guid>http://localhost:1313/about/</guid>
-      <description>&lt;p&gt;Yue is a minimal Hugo theme. Source code: &lt;a href=&#34;https://github.com/CyrusYip/hugo-theme-yue&#34;&gt;https://github.com/CyrusYip/hugo-theme-yue&lt;/a&gt;.&lt;/p&gt;</description>
+      <description>&lt;p&gt;Yue is a minimal Hugo theme. Source code: &lt;a href=&#34;https://github.com/CyrusYip/hugo-theme-yue&#34;&gt;https://github.com/CyrusYip/hugo-theme-yue&lt;/a&gt;.&lt;/p&gt;&#xA;</description>
     </item>
   </channel>
 </rss>
