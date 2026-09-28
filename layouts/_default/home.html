@@ -1,0 +1,11 @@
+{{ define "main" }}
+  {{ .Content }}
+  {{ with first 3 (where site.RegularPages "Section" "posts") }}
+  <h2>recent posts</h2>
+  <ul>
+    {{ range . }}
+    <li><a href="{{ .RelPermalink }}">{{ .LinkTitle }}</a></li>
+    {{ end }}
+  </ul>
+  {{ end }}
+{{ end }}
