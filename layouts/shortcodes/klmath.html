@@ -1,0 +1,6 @@
+{{- $math := replace (htmlEscape .Inner) "\\" "&#92;" | safeHTML -}}
+{{- if .Get "inline" -}}
+<span class="kl-math kl-math-inline" data-display="false">{{ $math }}</span>
+{{- else -}}
+<div class="kl-math" data-display="true">{{ $math }}</div>
+{{- end -}}

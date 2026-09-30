@@ -1,0 +1,4 @@
+<details class="kl-code">
+  <summary>{{ partial "kl-label.html" (.Get "title" | default "Show the Python") }}<span class="kl-code-tag">Python / NumPy</span></summary>
+  <div class="kl-code-body">{{ highlight (trim .Inner "\n\r") (.Get "lang" | default "python") "linenos=false" }}</div>
+</details>

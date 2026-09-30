@@ -1,0 +1,9 @@
+{{- $sectionHasMath := and .IsSection (gt (len (where .Pages "Params.klviz" true)) 0) -}}
+{{- if or .Params.klviz $sectionHasMath -}}
+{{- $klStyle := resources.Get "klviz/klviz.css" | fingerprint "sha256" -}}
+{{- $klScript := resources.Get "klviz/klviz.js" | fingerprint "sha256" -}}
+<link rel="stylesheet" href="{{ "klviz/vendor/katex/katex.min.css" | relURL }}">
+<link rel="stylesheet" href="{{ $klStyle.RelPermalink }}">
+<script src="{{ "klviz/vendor/katex/katex.min.js" | relURL }}" defer></script>
+<script src="{{ $klScript.RelPermalink }}" defer></script>
+{{- end -}}

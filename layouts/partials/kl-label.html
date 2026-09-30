@@ -1,0 +1,4 @@
+{{- $label := . | htmlEscape -}}
+{{- $label = replaceRE `\$([^$]+)\$` `<span class="kl-math kl-math-inline" data-display="false">${1}</span>` $label -}}
+{{- $label = replaceRE `\bk([123])\b` `<span class="kl-math kl-math-inline" data-display="false">k_${1}</span>` $label -}}
+{{- $label | safeHTML -}}

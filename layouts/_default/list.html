@@ -12,7 +12,7 @@
     {{- /* subtext = the post's opening paragraph (first <p> of rendered
            content), not the front-matter summary */ -}}
     {{ with index (findRE `(?s)<p>.*?</p>` .Content 1) 0 }}
-    <p class="summary">{{ . | plainify | htmlUnescape | chomp }}</p>
+    {{ replaceRE `^<p>` `<p class="summary">` . | safeHTML }}
     {{ end }}
   {{ end }}
   <nav class="paginator">

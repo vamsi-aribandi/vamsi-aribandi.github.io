@@ -1,0 +1,124 @@
+/* Gruvbox accents shared with the parallel-transformers post. Scoped to KL. */
+:root {
+  --kl-bg: var(--background-color, #fbf1c7); --kl-surface: #f2e5bc; --kl-ink: #3c3836;
+  --kl-muted: #75675a; --kl-line: #d5c4a1; --kl-blue: #076678;
+  --kl-orange: #af3a03; --kl-purple: #8f3f71; --kl-green: #427b58;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --kl-bg: var(--background-color, #282828); --kl-surface: #32302f; --kl-ink: #ebdbb2;
+    --kl-muted: #bdae93; --kl-line: #504945; --kl-blue: #83a598;
+    --kl-orange: #fe8019; --kl-purple: #d3869b; --kl-green: #8ec07c;
+  }
+}
+:root[data-theme="light"] {
+  --kl-bg: var(--background-color, #fbf1c7); --kl-surface: #f2e5bc; --kl-ink: #3c3836;
+  --kl-muted: #75675a; --kl-line: #d5c4a1; --kl-blue: #076678;
+  --kl-orange: #af3a03; --kl-purple: #8f3f71; --kl-green: #427b58;
+}
+:root[data-theme="dark"] {
+  --kl-bg: var(--background-color, #282828); --kl-surface: #32302f; --kl-ink: #ebdbb2;
+  --kl-muted: #bdae93; --kl-line: #504945; --kl-blue: #83a598;
+  --kl-orange: #fe8019; --kl-purple: #d3869b; --kl-green: #8ec07c;
+}
+.kl-figure, .kl-figure *, .kl-code, .kl-code * { box-sizing: border-box; }
+.kl-figure {
+  width: 100%;
+  max-width: 100%;
+  margin: 2rem 0 2.2rem;
+}
+.kl-viz {
+  color: var(--kl-ink); background: transparent; border: 0;
+  border-radius: 0; padding: 8px 0; overflow: visible;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-shadow: none;
+}
+.kl-head h3 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 22px; letter-spacing: 0; margin: 0 0 6px; color: var(--kl-ink); }
+.kl-head p { margin: 0; white-space: pre-line; font-size: 13px; line-height: 1.6; color: var(--kl-muted); }
+.kl-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 20px 0 14px; font-size: 13px; }
+.kl-tabs { display: inline-flex; flex-wrap: wrap; padding: 3px; gap: 3px; border: 1px solid var(--kl-line); border-radius: 9px; }
+.kl-tabs button, .kl-copy {
+  border: 0; background: transparent; color: var(--kl-muted); padding: 7px 12px;
+  font: inherit; border-radius: 6px; cursor: pointer; line-height: 1.5;
+}
+.kl-tabs button[aria-pressed="true"] { background: var(--kl-surface); color: var(--kl-ink); }
+.kl-tabs button:hover, .kl-copy:hover { color: var(--kl-ink); background: var(--kl-surface); }
+.kl-viz :focus-visible, .kl-code :focus-visible { outline: 2px solid var(--kl-blue); outline-offset: 4px; }
+.kl-controls input[type="range"] { width: min(240px, 42vw); accent-color: var(--kl-blue); vertical-align: middle; margin: 0 10px; }
+.kl-controls select { background: var(--kl-bg); color: var(--kl-ink); font: inherit; border: 1px solid var(--kl-line); border-radius: 6px; padding: 6px; }
+.kl-legend { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 16px 0 8px; font-size: 13px; color: var(--kl-ink); }
+.kl-legend > span { display: inline-flex; align-items: center; gap: 7px; }
+.kl-legend i { display: inline-block; width: 25px; height: 0; border-top: 3px solid var(--series); }
+.kl-legend i.dashed { border-top-style: dashed; }
+.kl-plot { position: relative; margin-top: 8px; }
+.kl-plot svg { width: 100%; display: block; overflow: visible; font-family: inherit; }
+.kl-grid { stroke: var(--kl-line); stroke-width: .7; opacity: .7; }
+.kl-tick { fill: var(--kl-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.kl-axis-label { fill: var(--kl-muted); font-size: 12px; }
+.kl-axis { stroke: var(--kl-line); }
+.kl-series { fill: none; stroke: var(--series); stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; }
+.kl-band { fill: var(--series); opacity: .12; }
+.kl-dot { fill: var(--kl-bg); stroke: var(--series); stroke-width: 2.3; }
+.kl-hit { fill: transparent; pointer-events: all; cursor: crosshair; }
+.kl-guide { stroke: var(--kl-muted); stroke-dasharray: 3 5; opacity: .7; }
+.kl-tooltip { position: absolute; z-index: 2; background: var(--kl-surface); color: var(--kl-ink);
+  border: 1px solid var(--kl-line); border-radius: 8px; box-shadow: 0 4px 18px #0002;
+  padding: 9px 12px; font-size: 12px; line-height: 1.7; pointer-events: none; max-width: 265px; }
+.kl-tooltip[hidden] { display: none; }
+.kl-tooltip b { font-weight: 600; }
+.kl-readouts { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--kl-line); margin-top: 14px; padding-top: 14px; gap: 12px; }
+.kl-readout small { display: block; color: var(--kl-muted); font-size: 11px; letter-spacing: .015em; }
+.kl-readout strong { display: block; margin-top: 4px; font-size: 21px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.kl-figure figcaption { max-width: 800px; margin: 12px auto 0; text-align: left; font-size: .8rem; line-height: 1.65; }
+.kl-figure figcaption p { margin: 0; }
+.kl-note { font-size: 12px; line-height: 1.6; color: var(--kl-muted); margin: 12px 0 0; }
+.kl-categorical { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 22px; }
+.kl-distribution h4 { margin: 0 0 4px; font-size: 15px; color: var(--kl-ink); }
+.kl-distribution p { margin: 0 0 15px; font-size: 12px; color: var(--kl-muted); }
+.kl-prob-row { display: grid; grid-template-columns: 25px 1fr 75px; align-items: center; gap: 8px; margin: 10px 0; font-size: 12px; }
+.kl-prob-track { height: 18px; background: var(--kl-surface); border-radius: 3px; position: relative; }
+.kl-prob-fill { height: 100%; min-width: 2px; border-radius: 3px; background: var(--series); }
+.kl-prob-ref { position: absolute; height: 26px; top: -4px; border-left: 2px dotted var(--kl-muted); }
+.kl-prob-value { font-variant-numeric: tabular-nums; text-align: right; }
+.kl-categorical .kl-readouts { grid-template-columns: 1fr 1fr; }
+.kl-categorical .kl-readout strong { font-size: 19px; }
+.kl-winner { margin-top: 14px; padding: 9px 0; font-size: 13px; }
+.kl-math { overflow-x: auto; padding: 4px 2px; margin: 1.2rem 0; font-size: 1.03rem; }
+.kl-math .katex-display { margin: .6em 0; }
+.kl-code { border: 1px solid var(--kl-line); border-radius: 10px; margin: 1.6rem 0; overflow: hidden; }
+.kl-code summary { cursor: pointer; padding: 13px 16px; background: var(--kl-bg); font-size: .84rem; }
+.kl-code-tag { float: right; color: var(--kl-muted); font-size: .7rem; margin-top: 3px; }
+.kl-code-body { position: relative; border-top: 1px solid var(--kl-line); }
+.kl-code .highlight, .kl-code pre { margin: 0; border: 0; border-radius: 0; }
+.kl-code pre { padding: 48px 18px 20px; font-size: .77rem; line-height: 1.65; max-height: 540px; overflow: auto; }
+.kl-copy { position: absolute; top: 8px; right: 10px; border: 1px solid var(--kl-line); font-size: 11px; background: var(--kl-bg); }
+.kl-methods { padding: 12px 16px; border-left: 2px solid var(--kl-line); margin: 1.6rem 0; font-size: .9rem; }
+.kl-methods summary { cursor: pointer; color: var(--foreground-color3); }
+.kl-pending { border-left: 3px solid var(--kl-orange); padding: 12px 18px; background: var(--kl-bg); font-size: .88rem; margin: 1.5rem 0; }
+@media (max-width: 560px) {
+  .kl-viz { padding: 8px 0; }
+  .kl-head h3 { font-size: 20px; }
+  .kl-controls { gap: 9px; }
+  .kl-tabs button { padding: 6px 9px; font-size: 12px; }
+  .kl-readout strong { font-size: 17px; }
+  .kl-categorical { grid-template-columns: 1fr; gap: 25px; }
+  .kl-code-tag { display: none; }
+  .kl-math { font-size: .86rem; }
+}
+
+.kl-visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+.kl-math-inline { display: inline; margin: 0; padding: 0; overflow: visible; font-size: inherit; }
+.kl-math-inline .katex { font-size: 1.05em; }
+.kl-gaussian-tooltip { width: 270px; max-width: calc(100% - 4px); background: var(--kl-bg); padding: 10px 12px; }
+.kl-inset-labels, .kl-inset-values { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; margin-top: 7px; white-space: nowrap; }
+.kl-inset-values { border-top: 1px solid var(--kl-line); padding-top: 6px; }
+.kl-gaussian-tooltip svg { margin-top: 6px; }
+
+.kl-inline-label .katex { font-size: 1.08em; }
+
+.kl-hole-tooltip { width:320px; max-width:calc(100% - 4px); }
+.kl-hole-group-label { text-align:center; font-size:11px; line-height:19px; }
+
+.kl-hole-variance-heading { color:var(--kl-muted); font-size:11px; margin:5px 0 3px; }
+.kl-hole-variances { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px 10px; font-size:11px; white-space:nowrap; }
