@@ -4,7 +4,7 @@ date: 2026-09-30
 draft: false
 toc: false
 klviz: true
-summary: "The structure behind KL estimation: why the same underlying KL can yield wildly different estimates."
+summary: "Why do RL codebases and papers use different estimators, and what makes one better than another?"
 ---
 
 KL divergence {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[log(p/q)]{{< /klmath >}} is an important quantity in AI. For frontier reinforcement learning, we keep the learned policy {{< klmath inline=true >}}\pi_\theta{{< /klmath >}} close to a reference policy {{< klmath inline=true >}}\pi_\mathrm{ref}{{< /klmath >}} by adding {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} to the loss, and we use it for on policy distillation to distill {{< klmath inline=true >}}\pi_\mathrm{teacher}{{< /klmath >}} into {{< klmath inline=true >}}\pi_\mathrm{student}{{< /klmath >}} by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}.

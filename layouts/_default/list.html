@@ -1,6 +1,6 @@
 {{ define "main" }}
 {{- /* site override of the theme's list: on section pages, full-size titles
-       with the post's intro text as subtext (theme shows date-above-title) */ -}}
+       with the post's front-matter summary as subtext (theme shows date-above-title) */ -}}
 {{ if eq .Kind "section" }}
 {{ $sectionPagerSize := or site.Params.sectionPagerSize 10 }}
 {{ $paginator := .Paginate .Pages $sectionPagerSize }}
@@ -9,10 +9,8 @@
   {{ range $paginator.Pages }}
     <h2 class="section-post-title"><a href="{{ .RelPermalink }}">{{ .LinkTitle }}</a></h2>
     {{ partial "main/dates.html" . }}
-    {{- /* subtext = the post's opening paragraph (first <p> of rendered
-           content), not the front-matter summary */ -}}
-    {{ with index (findRE `(?s)<p>.*?</p>` .Content 1) 0 }}
-    {{ replaceRE `^<p>` `<p class="summary">` . | safeHTML }}
+    {{ with .Params.summary }}
+    <p class="summary">{{ . | markdownify }}</p>
     {{ end }}
   {{ end }}
   <nav class="paginator">
