@@ -59,7 +59,15 @@ The gradient figures each have two plots: expected penalty gradient and true KL 
 
 All gradient curves use exact on-policy expectations with a fixed reference. Gaussian updates start at mu=1, with learning rate 0.15 and 30 steps. Two-action updates start at a=0.8, with learning rate 0.5 and 80 steps; updates are in logit space. The collapsible NumPy block reproduces the three trajectories. Direct k3 gives the forward-KL gradient, which coincides with the reverse-KL gradient for the equal-variance Gaussians but differs for the categorical example. Keep this distinction in the prose and captions.
 
-Structure and message: the article argues that k3 is a better estimate of KL but not a better gradient. Sections: intro and thesis; “k3 is k1 plus a zero-mean term” (Gaussian variance and hole figures); “The estimate becomes a gradient” (one identity, three facts, the 2×2 table); “Three small worlds” (Gaussian, two actions, two modes); “What this means for OPD”; “The mental model”. Citations are Markdown footnotes at the end of the file. The prose style is deliberately short and declarative.
+Structure and message: the article argues that k3 is a better estimate of KL but not a better gradient. Sections: intro and thesis; “Neither estimator always wins” (Gaussian variance and hole figures); “Same KL, different gradients” (one identity, three facts, the 2×2 table); “Three small worlds” (Gaussian, two actions, two modes); “What this means for OPD”; “Epilogue”. Notation: the ratio is written q/p (no w), and the two directions are written out as the reverse KL, KL[p ∥ q], and the forward KL, KL[q ∥ p]. Citations are Markdown footnotes at the end of the file. Collapsible derivations use
+
+```text
+{{< klderiv title="Derive the split" >}}
+Markdown with $…$-free math: use {{< klmath inline=true >}}…{{< /klmath >}} and {{< klmath >}}…{{< /klmath >}} as elsewhere.
+{{< /klderiv >}}
+```
+
+Inside a Markdown table, write ‖ as `\Vert` rather than `\|`, because the table syntax consumes the pipe. The prose style is deliberately short and declarative.
 
 `bimodalToy` fits one Gaussian p = N(mu, sigma^2) to q = ½N(−2, 0.5²) + ½N(2, 0.5²), learning mu and log sigma from (1, 1), batch 64, learning rate 0.05, 300 steps, 1,000 runs. Its plots are KL[p ∥ q] and KL[q ∥ p] over steps (median run by KL[p ∥ q], middle 50% shaded, diverged runs counted as infinite) and the median runs' final densities. Hover cards show q and each method's median-run Gaussian.
 

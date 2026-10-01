@@ -138,3 +138,5 @@
   .kl-gradient-grid { grid-template-columns:1fr; gap:22px; }
 }
 .kl-bimodal-values > div { grid-template-columns:minmax(0,1fr) 54px 54px; gap:7px; }
+.kl-deriv-body { border-top: 1px solid var(--kl-line); padding: 4px 18px 6px; font-size: .92em; }
+.kl-deriv-body .kl-math[data-display="true"] { overflow-x: auto; overflow-y: hidden; }
