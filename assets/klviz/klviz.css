@@ -137,3 +137,4 @@
 @media (max-width:700px) {
   .kl-gradient-grid { grid-template-columns:1fr; gap:22px; }
 }
+.kl-bimodal-values > div { grid-template-columns:minmax(0,1fr) 54px 54px; gap:7px; }

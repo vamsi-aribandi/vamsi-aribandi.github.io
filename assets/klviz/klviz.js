@@ -503,6 +503,74 @@
     }
     draw();return draw;
   }
+  function bimodalDensities(tooltip, policies) {
+    // Two-mode reference q (gray, dashed) and one-Gaussian policies.
+    const width=248,height=86,x=v=>12+(v+5)/10*224,y=v=>64-v/.85*56;
+    const svg=svgEl('svg',{viewBox:`0 0 ${width} ${height}`,role:'img','aria-label':'Two-mode reference density q, dashed, and the policy densities.'});
+    tooltip.append(svg);
+    svg.append(svgEl('line',{x1:12,x2:236,y1:64,y2:64,class:'kl-axis'}));
+    [-4,-2,0,2,4].forEach(v=>svg.append(svgEl('text',{x:x(v),y:81,'text-anchor':'middle',class:'kl-tick'},String(v))));
+    const curves=[{density:bimodalQ,color:'var(--kl-muted)',dashed:true},...policies.filter(p=>p.sigma!=null).map(p=>({density:v=>normalDensity(v,p.mu,p.sigma),color:p.color}))];
+    curves.forEach(c=>{
+      const path=Array.from({length:201},(_,i)=>{const v=-5+i*.05;return `${i?'L':'M'}${x(v)},${y(Math.min(c.density(v),.85))}`;}).join(' ');
+      svg.append(svgEl('path',{d:path,fill:'none',stroke:c.color,'stroke-width':2,...(c.dashed?{'stroke-dasharray':'4 3'}:{})}));
+    });
+    svg.append(svgEl('text',{x:236,y:9,'text-anchor':'end',class:'kl-tick'},'q · dashed'));
+  }
+  const normalDensity=(v,mu,sigma)=>Math.exp(-.5*((v-mu)/sigma)**2)/(sigma*Math.sqrt(2*Math.PI));
+  const bimodalQ=v=>.5*normalDensity(v,-2,.5)+.5*normalDensity(v,2,.5);
+  function bimodalToy(root, data) {
+    const d=data.bimodal, every=d.every;
+    const methods=[
+      {key:'k1_reward',label:'k₁ · reward',color:colors.k1},
+      {key:'k3_reward',label:'k₃ · reward',color:colors.k3},
+      {key:'k3_loss',label:'k₃ · loss',color:'var(--kl-green)',dashed:true}
+    ];
+    const leg=el('div','kl-legend',root),grid=el('div','kl-gradient-grid kl-toy-grid',root);
+    const reversePlot=el('div','kl-plot',grid),forwardPlot=el('div','kl-plot',grid),densityPlot=el('div','kl-plot kl-toy-wide',grid);
+    legend(leg,methods,{label:'q'});
+    const reverseMax=2.6, forwardMax=18;
+    const curve=(m,key,lo,hi,max)=>{const t=d.training[m.key];return t[key].map((y,i)=>({x:i*every,y:y==null?null:Math.min(y,max),lo:t[lo][i]==null?max:Math.min(t[lo][i],max),hi:t[hi][i]==null?max:Math.min(t[hi][i],max)}));};
+    const reverseSeries=methods.map(m=>({...m,data:curve(m,'reverse','rq25','rq75',reverseMax)}));
+    const forwardSeries=methods.map(m=>({...m,data:curve(m,'forward','fq25','fq75',forwardMax)}));
+    const last=d.training.k1_reward.mu.length-1;
+    const xs=Array.from({length:241},(_,i)=>-6+i*.05);
+    const densitySeries=[
+      {label:'q',color:'var(--kl-muted)',dashed:true,data:xs.map(v=>({x:v,y:bimodalQ(v)}))},
+      ...methods.map(m=>{const t=d.training[m.key];return {...m,data:xs.map(v=>({x:v,y:normalDensity(v,t.mu[last],t.sigma[last])}))};})
+    ];
+    const stepTip=(tooltip,step)=>{
+      const i=Math.round(step/every);
+      tooltip.classList.add('kl-gradient-tooltip');
+      el('b','',tooltip,`Step ${step} · median run`);
+      bimodalDensities(tooltip,methods.map(m=>({color:m.color,mu:d.training[m.key].mu[i],sigma:d.training[m.key].sigma[i]})));
+      const rows=el('div','kl-gradient-values kl-bimodal-values',tooltip);
+      const heading=el('div','kl-gradient-inset-note',rows);
+      el('span','',heading,'Policy');el('span','',heading,'KL[p ∥ q]');el('span','',heading,'KL[q ∥ p]');
+      methods.forEach(m=>{
+        const t=d.training[m.key],r=el('div','',rows);r.style.color=m.color;
+        el('span','',r,m.label);el('span','',r,t.reverse[i]==null?'∞':num(t.reverse[i]));el('span','',r,t.forward[i]==null?'∞':num(t.forward[i]));
+      });
+      const diverged=methods.filter(m=>d.training[m.key].diverged[i]>0).map(m=>`${m.label}: ${Math.round(100*d.training[m.key].diverged[i])}%`);
+      if(diverged.length) el('div','kl-gradient-equality',tooltip,`Diverged runs · ${diverged.join(' · ')}`);
+    };
+    const densityTip=(tooltip,v)=>{
+      tooltip.classList.add('kl-gradient-tooltip');
+      el('b','',tooltip,`x = ${num(v)} · after ${d.steps} steps`);
+      const rows=el('div','kl-gradient-values',tooltip);
+      densitySeries.forEach(s=>{
+        const r=el('div','',rows);r.style.color=s.color;
+        el('span','',r,s.label);el('span','',r,num(s.data.find(p=>p.x===v).y));
+      });
+    };
+    const steps=[0,50,100,150,200,250,300].filter(v=>v<=d.steps);
+    function draw() {
+      lineChart(reversePlot,{series:reverseSeries,xDomain:[0,d.steps],xTicks:steps,yDomain:[0,reverseMax],yTicks:[0,.5,1,1.5,2,2.5],xLabel:'Gradient steps',yLabel:'KL[p ∥ q] (the target)',description:'Two-mode reference: median reverse KL during minibatch gradient descent for each method.',dots:false,floatingTooltip:true,renderTooltip:stepTip});
+      lineChart(forwardPlot,{series:forwardSeries,xDomain:[0,d.steps],xTicks:steps,yDomain:[0,forwardMax],yTicks:[0,5,10,15],xLabel:'Gradient steps',yLabel:'KL[q ∥ p] (the other direction)',description:'Two-mode reference: median forward KL during minibatch gradient descent for each method.',dots:false,floatingTooltip:true,renderTooltip:stepTip});
+      lineChart(densityPlot,{series:densitySeries,xDomain:[-6,6],xTicks:[-6,-4,-2,0,2,4,6],yDomain:[0,.9],yTicks:[0,.2,.4,.6,.8],xLabel:'x',yLabel:'Density after training',description:'Two-mode reference q and the median-run policy of each method after training.',dots:false,floatingTooltip:true,renderTooltip:densityTip});
+    }
+    draw();return draw;
+  }
   function gaussianToy(root,data) {return toyFigure(root,data,'gaussian');}
   function categoricalToy(root,data) {return toyFigure(root,data,'categorical');}
   function empirical(root,data) {
@@ -553,13 +621,13 @@
       const root=host.querySelector('.kl-interactive'),kind=host.dataset.chart;
       try {
         let data;
-        if (['empirical','rewards','gaussianToy','categoricalToy'].includes(kind)) {
+        if (['empirical','rewards','gaussianToy','categoricalToy','bimodalToy'].includes(kind)) {
           const source=host.dataset.source;
           dataPromises[source] ||= fetch(source).then(r=>{if(!r.ok)throw Error(`Data fetch: ${r.status}`);return r.json();});
           data=await dataPromises[source];
         }
         root.replaceChildren();
-        const redraw=({gaussian,categorical,holeness,gaussianGradients,categoricalGradients,gaussianToy,categoricalToy,empirical,rewards})[kind](root,data);
+        const redraw=({gaussian,categorical,holeness,gaussianGradients,categoricalGradients,gaussianToy,categoricalToy,bimodalToy,empirical,rewards})[kind](root,data);
         let oldWidth=host.clientWidth,frame;
         new ResizeObserver(()=>{
           if(host.clientWidth!==oldWidth) {oldWidth=host.clientWidth;cancelAnimationFrame(frame);frame=requestAnimationFrame(redraw);}
