@@ -1,7 +1,7 @@
 ---
 title: "The Structure Behind KL Estimation for Reinforcement Learning"
 date: 2026-09-30
-draft: false
+draft: true
 toc: false
 klviz: true
 summary: "Why do RL codebases and papers use different estimators, and what makes one better than another?"
