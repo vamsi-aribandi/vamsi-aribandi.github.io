@@ -62,37 +62,48 @@ def variances(family, value):
 
 
 def descend(family, start, rate, steps, batch=16, seeds=2000, seed=0):
-    """Minibatch gradient descent from mu (Gaussian) or a (two actions)."""
+    """Minibatch gradient descent from mu (Gaussian) or a (two actions).
+
+    Returns, for each method, the true KL and the policy (mu or a) of every
+    run at every step.
+    """
     rng = np.random.default_rng(seed)
     if family == 'categorical':
         start = np.log(start / (1 - start))   # update the logit theta
-    kls = {}
+    kls, policies = {}, {}
     for method in METHODS:
         theta = np.full(seeds, start, dtype=float)
-        history = []
+        history, policy = [], []
         for step in range(steps + 1):
             if family == 'gaussian':
                 history.append(gaussian_kl(theta))
+                policy.append(theta)
                 log_ratio, score = gaussian_samples(theta[:, None], rng.normal(size=(seeds, batch)))
             else:
                 history.append(categorical_kl(theta))
                 log_a, log_b = -np.logaddexp(0, -theta), -np.logaddexp(0, theta)
+                policy.append(np.exp(log_a))
                 a = np.exp(log_a)[:, None]
                 first = rng.random((seeds, batch)) < a   # sampled action 1?
                 log_ratio = np.where(first, log_a[:, None], log_b[:, None]) - np.log(.5)
                 score = np.where(first, 1 - a, -a)
             gradient = per_sample(log_ratio, score)[2][method].mean(axis=1)
             theta = theta - rate * gradient
-        kls[method] = np.array(history)
-    return kls
+        kls[method], policies[method] = np.array(history), np.array(policy)
+    return kls, policies
 
 
 def figure(family, grid, start, rate, steps):
     kl = gaussian_kl if family == 'gaussian' else lambda a: categorical_kl(np.log(a / (1 - a)))
     rows = [dict(x=float(v), kl=float(kl(v)), **{k: float(x) for k, x in variances(family, v).items()}) for v in grid]
-    trajectories = descend(family, start, rate, steps)
-    training = {m: dict(median=np.median(t, axis=1).tolist(), q25=np.quantile(t, .25, axis=1).tolist(),
-                        q75=np.quantile(t, .75, axis=1).tolist()) for m, t in trajectories.items()}
+    kls, policies = descend(family, start, rate, steps)
+    training = {}
+    for m, t in kls.items():
+        # The median run at each step, so its policy can be drawn in hover cards.
+        middle = np.argsort(t, axis=1)[:, t.shape[1] // 2]
+        steps_ = np.arange(len(t))
+        training[m] = dict(median=t[steps_, middle].tolist(), policy=policies[m][steps_, middle].tolist(),
+                           q25=np.quantile(t, .25, axis=1).tolist(), q75=np.quantile(t, .75, axis=1).tolist())
     return dict(start=start, rate=rate, steps=steps, batch=16, seeds=2000, variances=rows, training=training)
 
 

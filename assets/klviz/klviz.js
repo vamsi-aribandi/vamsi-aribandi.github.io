@@ -154,11 +154,15 @@
       });
     });
     const guide = add('line', {x1:0,x2:0,y1:m.t,y2:h-m.b,class:'kl-guide',visibility:'hidden'});
+    // One marker per series, shown only while inspecting a value.
+    const markers = cfg.series.map(s => add('circle', {r:4.5,class:'kl-dot',style:`--series:${s.color}`,visibility:'hidden'}));
+    const inDomain = v => v != null && (!cfg.logY || v > 0) && ty(v) >= ty(yd[0]) && ty(v) <= ty(yd[1]);
     const hit = add('rect', {x:m.l,y:m.t,width:pw,height:ph,class:'kl-hit'});
     const xs = [...new Set(cfg.series.flatMap(s => s.data.filter(p => p.y != null).map(p => p.x)))].sort((a,b)=>a-b);
     let index = 0, tooltipCorner = null;
     function hideTooltip() {
       tooltip.hidden=true;guide.setAttribute('visibility','hidden');
+      markers.forEach(c=>c.setAttribute('visibility','hidden'));
       tooltipCorner=null;
       if(dismissFloatingTooltip===hideTooltip) dismissFloatingTooltip=null;
     }
@@ -166,6 +170,11 @@
       index = Math.max(0, Math.min(xs.length-1, i));
       const value = xs[index];
       guide.setAttribute('x1', x(value)); guide.setAttribute('x2', x(value)); guide.setAttribute('visibility','visible');
+      markers.forEach((c,i) => {
+        const p = cfg.series[i].data.find(p => p.x === value);
+        if (!p || !inDomain(p.y)) {c.setAttribute('visibility','hidden');return;}
+        c.setAttribute('cx', x(p.x)); c.setAttribute('cy', y(p.y)); c.setAttribute('visibility','visible');
+      });
       tooltip.replaceChildren();
       if (cfg.renderTooltip) {
         cfg.renderTooltip(tooltip, value);
@@ -466,6 +475,7 @@
       tooltip.classList.add('kl-gradient-tooltip');
       const row=d.variances.find(r=>r.x===x);
       el('b','',tooltip,`${gaussian?'$\\mu$':'$a$'} = ${num(x)} · $\\mathrm{KL}[p\\,\\|\\,q]$ = ${num(row.kl)}`);
+      gradientDistributions(tooltip,family,[{value:x,color:colors.k1}]);
       const rows=el('div','kl-gradient-values',tooltip);
       series.forEach(s=>{
         const p=s.data.find(p=>p.x===x),r=el('div','',rows);r.style.color=s.color;
@@ -474,19 +484,21 @@
     };
     const trainingTip=(tooltip,step)=>{
       tooltip.classList.add('kl-gradient-tooltip');
-      el('b','',tooltip,`Step ${step} · median KL[p ∥ q]`);
-      const rows=el('div','kl-gradient-values',tooltip);
-      trainingSeries.forEach(s=>{
-        const p=s.data[step],r=el('div','',rows);r.style.color=s.color;
-        el('span','',r,s.label);el('span','',r,num(p.y));
+      el('b','',tooltip,`Step ${step} · median run`);
+      gradientDistributions(tooltip,family,methods.map(m=>({color:m.color,value:d.training[m.key].policy[step]})));
+      const rows=el('div','kl-gradient-values kl-gradient-training-values',tooltip);
+      const heading=el('div','kl-gradient-inset-note',rows);
+      el('span','',heading,'Policy');el('span','',heading,gaussian?String.raw`$\mu$`:'$a$');el('span','',heading,'KL[p ∥ q]');
+      methods.forEach(m=>{
+        const r=el('div','',rows);r.style.color=m.color;
+        el('span','',r,m.label);el('span','',r,num(d.training[m.key].policy[step]));el('span','',r,num(d.training[m.key].median[step]));
       });
-      el('div','kl-gradient-equality',tooltip,'Middle 50% of runs shaded');
     };
     const xd=gaussian?[0,2]:[0,1], xt=gaussian?[0,.5,1,1.5,2]:[0,.25,.5,.75,1];
     const logTicks=dm=>{const t=[];for(let e=Math.log10(dm[0]);e<=Math.log10(dm[1])+1e-9;e+=2)t.push(10**e);return t;};
     function draw() {
-      lineChart(valuePlot,{series:valueSeries,xDomain:xd,xTicks:xt,logY:true,yDomain:valueDomain,yTicks:logTicks(valueDomain),xLabel,yLabel:'Variance of KL estimate',description:`${gaussian?'Gaussian':'Two-action'} policy: exact variance of the k1 and k3 KL estimates. The marker shows where training starts.`,dots:false,selectedX:d.start,floatingTooltip:true,renderTooltip:variancesTip(valueSeries)});
-      lineChart(gradientPlot,{series:gradientSeries,xDomain:xd,xTicks:xt,logY:true,yDomain:gradientDomain,yTicks:logTicks(gradientDomain),xLabel,yLabel:'Variance of gradient',description:`${gaussian?'Gaussian':'Two-action'} policy: exact per-sample gradient variance for k1 in reward, k3 in reward, and k3 as direct loss.`,dots:false,selectedX:d.start,floatingTooltip:true,renderTooltip:variancesTip(gradientSeries)});
+      lineChart(valuePlot,{series:valueSeries,xDomain:xd,xTicks:xt,logY:true,yDomain:valueDomain,yTicks:logTicks(valueDomain),xLabel,yLabel:'Variance of KL estimate',description:`${gaussian?'Gaussian':'Two-action'} policy: exact variance of the k1 and k3 KL estimates.`,dots:false,floatingTooltip:true,renderTooltip:variancesTip(valueSeries)});
+      lineChart(gradientPlot,{series:gradientSeries,xDomain:xd,xTicks:xt,logY:true,yDomain:gradientDomain,yTicks:logTicks(gradientDomain),xLabel,yLabel:'Variance of gradient',description:`${gaussian?'Gaussian':'Two-action'} policy: exact per-sample gradient variance for k1 in reward, k3 in reward, and k3 as direct loss.`,dots:false,floatingTooltip:true,renderTooltip:variancesTip(gradientSeries)});
       lineChart(trainingPlot,{series:trainingSeries,xDomain:[0,d.steps],xTicks:[0,10,20,30,40,50,60],yDomain:[0,gaussian?1.4:.75],yTicks:gaussian?[0,.25,.5,.75,1,1.25]:[0,.2,.4,.6],xLabel:'Gradient steps',yLabel:'True KL[p ∥ q] (nats)',description:`${gaussian?'Gaussian':'Two-action'} policy: median true KL over ${d.seeds} runs of minibatch gradient descent, batch ${d.batch}, learning rate ${d.rate}. Shading spans the middle 50% of runs.`,dots:false,floatingTooltip:true,renderTooltip:trainingTip});
     }
     draw();return draw;

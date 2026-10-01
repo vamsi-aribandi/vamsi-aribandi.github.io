@@ -189,7 +189,7 @@ We use two toy policies, one for each distribution shape from earlier: a Gaussia
 2. **Variance of the gradient**: how noisy a single sample's contribution to the update is. This is what a minibatch averages.
 3. **Gradient descent**: the true {{< klmath inline=true >}}\mathrm{KL}[p_\theta\,\|\,q]{{< /klmath >}} after each step, using minibatches of 16 on-policy samples. Lines show the median of 2,000 runs, and shading covers the middle half.
 
-The vertical line in the first two plots marks where gradient descent starts. Hover over any plot to read off values.
+Hover over any plot to see the distributions and read off values.
 
 ### Gaussian
 
@@ -275,36 +275,42 @@ def variances(family, value):
 
 
 def descend(family, start, rate, steps, batch=16, seeds=2000, seed=0):
-    """Minibatch gradient descent from mu (Gaussian) or a (two actions)."""
+    """Minibatch gradient descent from mu (Gaussian) or a (two actions).
+
+    Returns, for each method, the true KL and the policy (mu or a) of every
+    run at every step.
+    """
     rng = np.random.default_rng(seed)
     if family == 'categorical':
         start = np.log(start / (1 - start))   # update the logit theta
-    kls = {}
+    kls, policies = {}, {}
     for method in METHODS:
         theta = np.full(seeds, start, dtype=float)
-        history = []
+        history, policy = [], []
         for step in range(steps + 1):
             if family == 'gaussian':
                 history.append(gaussian_kl(theta))
+                policy.append(theta)
                 log_ratio, score = gaussian_samples(theta[:, None], rng.normal(size=(seeds, batch)))
             else:
                 history.append(categorical_kl(theta))
                 log_a, log_b = -np.logaddexp(0, -theta), -np.logaddexp(0, theta)
+                policy.append(np.exp(log_a))
                 a = np.exp(log_a)[:, None]
                 first = rng.random((seeds, batch)) < a   # sampled action 1?
                 log_ratio = np.where(first, log_a[:, None], log_b[:, None]) - np.log(.5)
                 score = np.where(first, 1 - a, -a)
             gradient = per_sample(log_ratio, score)[2][method].mean(axis=1)
             theta = theta - rate * gradient
-        kls[method] = np.array(history)
-    return kls
+        kls[method], policies[method] = np.array(history), np.array(policy)
+    return kls, policies
 
 
 # Values at the starting points, and median KL after 20 steps.
 print(variances('gaussian', 1.5))
 print(variances('categorical', 0.05))
 for family, start, rate in [('gaussian', 1.5, 0.1), ('categorical', 0.05, 1.0)]:
-    kls = descend(family, start, rate, steps=20)
+    kls, policies = descend(family, start, rate, steps=20)
     print(family, {m: np.median(k[-1]) for m, k in kls.items()})
 {{< /klcode >}}
 
