@@ -122,3 +122,17 @@
 
 .kl-hole-variance-heading { color:var(--kl-muted); font-size:11px; margin:5px 0 3px; }
 .kl-hole-variances { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px 10px; font-size:11px; white-space:nowrap; }
+
+.kl-gradient-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+.kl-gradient-tooltip { width:224px; max-width:calc(100% - 4px); background:var(--kl-bg); padding:8px 10px; font-size:11px; line-height:1.45; border-radius:6px; }
+.kl-tooltip-floating { position:fixed; z-index:20; max-width:calc(100vw - 20px); max-height:calc(100vh - 20px); }
+.kl-gradient-tooltip svg { margin:3px 0 0; }
+.kl-gradient-inset-note { color:var(--kl-muted); font-size:10px; line-height:1.5; margin-top:5px; }
+.kl-gradient-equality { border-top:1px solid var(--kl-line); padding-top:5px; margin-top:4px; font-size:10px; }
+.kl-gradient-values { margin-top:5px; font-size:11px; font-variant-numeric:tabular-nums; }
+.kl-gradient-values > div { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:baseline; }
+.kl-gradient-training-values > div { grid-template-columns:minmax(0,1fr) 44px 58px; gap:7px; }
+.kl-gradient-values > div > span:not(:first-child) { text-align:right; }
+@media (max-width:700px) {
+  .kl-gradient-grid { grid-template-columns:1fr; gap:22px; }
+}

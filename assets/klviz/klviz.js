@@ -1,8 +1,12 @@
-/* Dependency-free SVG charts. All scientific data are local, frozen JSON.
+/* Dependency-free SVG charts. Analytical examples and local, frozen experiment data.
    Styles use CSS variables, so changing color scheme needs no redraw. */
 (() => {
   'use strict';
   const NS = 'http://www.w3.org/2000/svg';
+  let dismissFloatingTooltip;
+  // A viewport-positioned card must not stay behind when the page moves.
+  window.addEventListener('scroll',()=>dismissFloatingTooltip?.(),{capture:true,passive:true});
+  window.addEventListener('resize',()=>dismissFloatingTooltip?.());
   const colors = {k1: 'var(--kl-blue)', k3: 'var(--kl-orange)', LLM: 'var(--kl-purple)', PPO: 'var(--kl-green)'};
   const sum = a => a.reduce((x, y) => x + y, 0);
   const mean = a => sum(a) / a.length;
@@ -87,6 +91,21 @@
     for (let x = Math.ceil(domain[0] / step) * step; x <= domain[1] + step * 1e-8; x += step) ticks.push(x);
     return ticks;
   }
+  function floatingTooltipPosition({cx,cy,width,height,vw,vh,plots,previous}) {
+    const gap=14, edge=10;
+    const candidates=[['above-right',true,true],['above-left',false,true],['below-right',true,false],['below-left',false,false]].map(([corner,right,above])=>{
+      const left=Math.max(edge,Math.min(vw-edge-width,right?cx+gap:cx-gap-width));
+      const top=Math.max(edge,Math.min(vh-edge-height,above?cy-gap-height:cy+gap));
+      const overlap=plots.reduce((area,plot)=>area+
+        Math.max(0,Math.min(left+width,plot.right)-Math.max(left,plot.left))*
+        Math.max(0,Math.min(top+height,plot.bottom)-Math.max(top,plot.top)),0);
+      const coversPointer=left<cx+8 && left+width>cx-8 && top<cy+8 && top+height>cy-8;
+      // A small preference for the current corner prevents jitter at a tie.
+      return {left,top,corner,coversPointer,score:overlap+(previous && corner!==previous?120:0)};
+    });
+    const clear=candidates.filter(p=>!p.coversPointer);
+    return (clear.length?clear:candidates).reduce((best,p)=>p.score<best.score?p:best);
+  }
   function lineChart(parent, cfg) {
     parent.replaceChildren();
     const w = Math.max(280, parent.clientWidth), h = w < 480 ? 300 : 342;
@@ -105,7 +124,7 @@
     const svg = svgEl('svg', {viewBox: `0 0 ${w} ${h}`, role: 'img', 'aria-label': cfg.description});
     parent.append(svg); parent.tabIndex = 0;
     parent.setAttribute('aria-label', cfg.description + ' Use left and right arrow keys to inspect values.');
-    const tooltip = el('div', 'kl-tooltip', parent); tooltip.hidden = true;
+    const tooltip = el('div', cfg.floatingTooltip ? 'kl-tooltip kl-tooltip-floating' : 'kl-tooltip', parent); tooltip.hidden = true;
     tooltip.setAttribute('role', 'status');
     const add = (tag, attrs, text) => {const e = svgEl(tag, attrs, text); svg.append(e); return e;};
     const yTicks = cfg.yTicks || niceTicks(yd, cfg.logY);
@@ -137,7 +156,12 @@
     const guide = add('line', {x1:0,x2:0,y1:m.t,y2:h-m.b,class:'kl-guide',visibility:'hidden'});
     const hit = add('rect', {x:m.l,y:m.t,width:pw,height:ph,class:'kl-hit'});
     const xs = [...new Set(cfg.series.flatMap(s => s.data.filter(p => p.y != null).map(p => p.x)))].sort((a,b)=>a-b);
-    let index = 0;
+    let index = 0, tooltipCorner = null;
+    function hideTooltip() {
+      tooltip.hidden=true;guide.setAttribute('visibility','hidden');
+      tooltipCorner=null;
+      if(dismissFloatingTooltip===hideTooltip) dismissFloatingTooltip=null;
+    }
     function inspect(i, fixed = false, pointer = null) {
       index = Math.max(0, Math.min(xs.length-1, i));
       const value = xs[index];
@@ -156,20 +180,34 @@
       }
       tooltip.hidden = false;
       const px = pointer ? pointer.x : x(value), py = pointer ? pointer.y : 8;
-      const right = px + 16;
-      const left = right + tooltip.offsetWidth > w ? px - tooltip.offsetWidth - 16 : right;
-      tooltip.style.left = `${Math.max(0, Math.min(w-tooltip.offsetWidth, left))}px`;
-      tooltip.style.top = `${Math.max(0, Math.min(h-tooltip.offsetHeight, py+16))}px`;
+      if(cfg.floatingTooltip) {
+        if(dismissFloatingTooltip && dismissFloatingTooltip!==hideTooltip) dismissFloatingTooltip();
+        dismissFloatingTooltip=hideTooltip;
+        const rect=svg.getBoundingClientRect(), cx=rect.left+px*rect.width/w, cy=rect.top+py*rect.height/h;
+        // Protect both plots in the pair, rather than moving the card from
+        // the active plot onto its neighbor. Cards may leave the figure.
+        const plots=[...parent.closest('.kl-gradient-grid').querySelectorAll('.kl-hit')].map(p=>p.getBoundingClientRect());
+        const position=floatingTooltipPosition({cx,cy,width:tooltip.offsetWidth,height:tooltip.offsetHeight,vw:document.documentElement.clientWidth,vh:window.innerHeight,plots,previous:tooltipCorner});
+        tooltipCorner=position.corner;
+        tooltip.style.left=`${position.left}px`;
+        tooltip.style.top=`${position.top}px`;
+      } else {
+        const right = px + 16;
+        const left = right + tooltip.offsetWidth > w ? px - tooltip.offsetWidth - 16 : right;
+        tooltip.style.left = `${Math.max(0, Math.min(w-tooltip.offsetWidth, left))}px`;
+        tooltip.style.top = `${Math.max(0, Math.min(h-tooltip.offsetHeight, py+16))}px`;
+      }
       if (fixed) tooltip.setAttribute('aria-live','polite'); else tooltip.removeAttribute('aria-live');
     }
     hit.addEventListener('pointermove', e => {
       const rect = svg.getBoundingClientRect(), pos = (e.clientX-rect.left)*w/rect.width;
       inspect(xs.reduce((best,v,i)=>Math.abs(x(v)-pos)<Math.abs(x(xs[best])-pos)?i:best,0), false, {x:pos,y:(e.clientY-rect.top)*h/rect.height});
     });
-    parent.onpointerleave = () => {tooltip.hidden=true;guide.setAttribute('visibility','hidden');};
+    parent.onpointerleave = hideTooltip;
+    if(cfg.floatingTooltip) parent.onblur=hideTooltip;
     parent.onkeydown = e => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {e.preventDefault();inspect(index+(e.key==='ArrowRight'?1:-1),true);}
-      if (e.key === 'Escape') {tooltip.hidden=true;guide.setAttribute('visibility','hidden');}
+      if (e.key === 'Escape') hideTooltip();
     };
     if (cfg.selectedX != null) {
       const v=cfg.selectedX;
@@ -305,6 +343,141 @@
     }
     draw();return draw;
   }
+  // Exact on-policy gradients. The categorical parameter here is a probability;
+  // its gradients and optimization updates are with respect to the logit.
+  function gradientMetrics(family, value) {
+    if (family === 'gaussian') return {kl:value*value/2, gradients:[value,0,value]};
+    const a=value, g=a*(1-a)*Math.log(a/(1-a));
+    return {kl:a*Math.log(2*a)+(1-a)*Math.log(2*(1-a)), gradients:[g,g+.5-a,a-.5]};
+  }
+  function gradientTrajectory(family, rate, steps) {
+    const gaussian=family==='gaussian';
+    const parameters=Array(3).fill(gaussian ? 1 : Math.log(4));
+    return Array.from({length:steps+1},(_,step)=>{
+      const states=parameters.map(t=>gaussian ? t : 1/(1+Math.exp(-t)));
+      const metrics=states.map(v=>gradientMetrics(family,v));
+      if(step<steps) parameters.forEach((t,i)=>{parameters[i]=t-rate*metrics[i].gradients[i];});
+      return {step,states,metrics};
+    });
+  }
+  function gradientDistributions(tooltip, family, policies) {
+    const gaussian=family==='gaussian', width=248, height=86;
+    const svg=svgEl('svg',{viewBox:`0 0 ${width} ${height}`,role:'img','aria-label':gaussian ? 'Policy and reference Gaussian densities. The reference is gray.' : 'Action A and B probabilities for each policy. The reference is gray.'});
+    tooltip.append(svg);
+    const distributions=[{value:gaussian?0:.5,color:'var(--kl-muted)',dashed:true},...policies];
+    if(gaussian) {
+      const x=v=>12+(v+5)/10*224, y=v=>64-v/.44*52;
+      svg.append(svgEl('line',{x1:12,x2:236,y1:64,y2:64,class:'kl-axis'}));
+      [-4,0,4].forEach(v=>svg.append(svgEl('text',{x:x(v),y:81,'text-anchor':'middle',class:'kl-tick'},String(v))));
+      distributions.forEach(p=>{
+        const points=Array.from({length:201},(_,i)=>{const v=-5+i*.05;return [x(v),y(Math.exp(-.5*(v-p.value)**2)/Math.sqrt(2*Math.PI))];});
+        const path=points.map(([px,py],i)=>`${i?'L':'M'}${px},${py}`).join(' ');
+        if(policies.length===1 && !p.dashed) svg.append(svgEl('path',{d:`M12,64 L${path.slice(1)} L236,64 Z`,fill:p.color,opacity:'.1'}));
+        svg.append(svgEl('path',{d:path,fill:'none',stroke:p.color,'stroke-width':2,...(p.dashed?{'stroke-dasharray':'4 3'}:{})}));
+      });
+    } else {
+      [0,.5,1].forEach(v=>{
+        svg.append(svgEl('line',{x1:25,x2:238,y1:64-v*52,y2:64-v*52,class:'kl-grid'}));
+        svg.append(svgEl('text',{x:20,y:68-v*52,'text-anchor':'end',class:'kl-tick'},String(v)));
+      });
+      // Reference marks remain visible when policies equal q.
+      [0,1].forEach(action=>{
+        const center=80+action*110, bw=policies.length===1?23:16;
+        policies.forEach((p,i)=>{
+          const value=action===0?p.value:1-p.value;
+          const x=center+(i-(policies.length-1)/2)*(bw+4)-bw/2;
+          svg.append(svgEl('rect',{x,y:64-value*52,width:bw,height:value*52,fill:p.color,opacity:p.dashed?'.55':'.85'}));
+        });
+        svg.append(svgEl('line',{x1:center-37,x2:center+37,y1:38,y2:38,stroke:'var(--kl-muted)','stroke-width':1.8,'stroke-dasharray':'4 3'}));
+        svg.append(svgEl('text',{x:center,y:81,'text-anchor':'middle',class:'kl-tick'},action===0?'A':'B'));
+      });
+    }
+    svg.append(svgEl('text',{x:236,y:9,'text-anchor':'end',class:'kl-tick'},'q · dashed'));
+  }
+  function policyGradients(root, family) {
+    const gaussian=family==='gaussian', rate=gaussian?.15:.5, steps=gaussian?30:80;
+    const methods=[
+      {label:'k₁ · reward',color:colors.k1},
+      {label:'k₃ · reward',color:colors.k3},
+      {label:'k₃ · loss',color:'var(--kl-green)',dashed:true}
+    ];
+    const leg=el('div','kl-legend',root),grid=el('div','kl-gradient-grid',root);
+    const gradientPlot=el('div','kl-plot',grid),trainingPlot=el('div','kl-plot',grid);
+    legend(leg,methods);
+    const values=Array.from({length:301},(_,i)=>gaussian ? -2+4*i/300 : .01+.98*i/300);
+    const gradientSeries=methods.map((s,i)=>({...s,data:values.map(value=>({x:value,y:gradientMetrics(family,value).gradients[i]}))}));
+    const trajectory=gradientTrajectory(family,rate,steps);
+    const trainingSeries=methods.map((s,i)=>({...s,data:trajectory.map(p=>({x:p.step,y:p.metrics[i].kl}))}));
+    function gradientInset(tooltip,value) {
+      const metrics=gradientMetrics(family,value);
+      tooltip.classList.add('kl-gradient-tooltip');
+      el('b','',tooltip,`${gaussian?'$\\mu$':'$a$'} = ${num(value)}`);
+      gradientDistributions(tooltip,family,[{value,color:colors.k1}]);
+      el('div','kl-gradient-equality',tooltip,String.raw`$\mathbb{E}_p[k_1]=\mathbb{E}_p[k_3]$ = ${num(metrics.kl)}`);
+      const rows=el('div','kl-gradient-values',tooltip);
+      methods.forEach((s,i)=>{
+        const row=el('div','',rows);row.style.color=s.color;
+        el('span','',row,s.label);el('span','',row,num(metrics.gradients[i]));
+      });
+    }
+    function trainingInset(tooltip,step) {
+      const point=trajectory[step];
+      tooltip.classList.add('kl-gradient-tooltip');
+      el('b','',tooltip,`Step ${step}`);
+      gradientDistributions(tooltip,family,methods.map((s,i)=>({...s,value:point.states[i]})));
+      const rows=el('div','kl-gradient-values kl-gradient-training-values',tooltip);
+      const heading=el('div','kl-gradient-inset-note',rows);
+      el('span','',heading,'Policy');el('span','',heading,gaussian?String.raw`$\mu$`:'$a$');el('span','',heading,'KL[p ∥ q]');
+      methods.forEach((s,i)=>{
+        const row=el('div','',rows);row.style.color=s.color;
+        el('span','',row,s.label);el('span','',row,num(point.states[i]));el('span','',row,num(point.metrics[i].kl));
+      });
+    }
+    function draw() {
+      lineChart(gradientPlot,{series:gradientSeries,xDomain:gaussian?[-2,2]:[0,1],xTicks:gaussian?[-2,-1,0,1,2]:[0,.25,.5,.75,1],yDomain:gaussian?[-2.2,2.2]:[-.55,.55],yTicks:gaussian?[-2,-1,0,1,2]:[-.5,-.25,0,.25,.5],xLabel:gaussian?'Policy mean μ':'Action probability a',yLabel:'Expected penalty gradient',description:`${gaussian?'Gaussian':'Two-action'} policy: exact expected gradients for k1 in reward, k3 in reward, and k3 as direct loss.`,dots:false,floatingTooltip:true,renderTooltip:gradientInset});
+      lineChart(trainingPlot,{series:trainingSeries,xDomain:[0,steps],xTicks:gaussian?[0,10,20,30]:[0,20,40,60,80],yDomain:gaussian?[0,.55]:[0,.7],yTicks:gaussian?[0,.1,.2,.3,.4,.5]:[0,.2,.4,.6],xLabel:'Gradient steps',yLabel:'True KL[p ∥ q] (nats)',description:`${gaussian?'Gaussian':'Two-action'} policy: true KL during exact gradient updates with learning rate ${rate}.`,dots:false,floatingTooltip:true,renderTooltip:trainingInset});
+    }
+    draw();return draw;
+  }
+  function gaussianGradients(root) {return policyGradients(root,'gaussian');}
+  function categoricalGradients(root) {return policyGradients(root,'categorical');}
+  function gradientNoise(root) {
+    // Exact moments for p=N(mu,1), q=N(0,1), learning only mu. t=mu^2.
+    const methods=[
+      {label:'k₁',color:colors.k1},
+      {label:'k₃',color:colors.k3},
+      {label:'k₃ · loss',color:'var(--kl-green)',dashed:true}
+    ];
+    const leg=el('div','kl-legend',root),grid=el('div','kl-gradient-grid',root);
+    const valuePlot=el('div','kl-plot',grid),gradientPlot=el('div','kl-plot',grid);
+    legend(leg,methods);
+    const mus=Array.from({length:217},(_,i)=>.02+.005*i);
+    const at=(f)=>mus.map(mu=>({x:mu,y:f(mu*mu)}));
+    const valueSeries=[
+      {...methods[0],label:'k₁',data:at(t=>t)},
+      {...methods[1],label:'k₃',data:at(t=>Math.expm1(t)-t)}
+    ];
+    const gradientSeries=[
+      {...methods[0],label:'k₁ · reward',data:at(t=>2*t+t*t/4)},
+      {...methods[2],label:'k₃ · loss',data:at(t=>Math.exp(t)*(1+4*t)-1-3*t)}
+    ];
+    const inset=(series,kind)=>(tooltip,mu)=>{
+      tooltip.classList.add('kl-gradient-tooltip');
+      el('b','',tooltip,String.raw`$\mu$ = ${num(mu)} · $\mathrm{KL}[p\,\|\,q]$ = ${num(mu*mu/2)}`);
+      const rows=el('div','kl-gradient-values',tooltip);
+      series.forEach(s=>{
+        const row=el('div','',rows);row.style.color=s.color;
+        el('span','',row,s.label);el('span','',row,num(s.data.find(p=>p.x===mu).y));
+      });
+      const [a,b]=series.map(s=>s.data.find(p=>p.x===mu).y);
+      el('div','kl-gradient-equality',tooltip,b<a?`k₃ ${kind} is ${num(a/b)}× lower`:`k₃ ${kind} is ${num(b/a)}× higher`);
+    };
+    function draw() {
+      lineChart(valuePlot,{series:valueSeries,xDomain:[0,1.1],xTicks:[0,.25,.5,.75,1],logY:true,yDomain:[1e-7,1e1],yTicks:[1e-7,1e-5,1e-3,1e-1,1e1],xLabel:'Policy mean μ',yLabel:'Variance of KL estimate',description:'Equal-variance Gaussians: exact variance of the k1 and k3 KL estimates.',dots:false,floatingTooltip:true,renderTooltip:inset(valueSeries,'variance')});
+      lineChart(gradientPlot,{series:gradientSeries,xDomain:[0,1.1],xTicks:[0,.25,.5,.75,1],logY:true,yDomain:[1e-3,1e2],yTicks:[1e-3,1e-2,1e-1,1e0,1e1,1e2],xLabel:'Policy mean μ',yLabel:'Per-sample gradient variance',description:'Equal-variance Gaussians: exact per-sample gradient variance for k1 in reward and k3 as direct loss. Both are unbiased here.',dots:false,floatingTooltip:true,renderTooltip:inset(gradientSeries,'gradient variance')});
+    }
+    draw();return draw;
+  }
   function empirical(root,data) {
     const leg=el('div','kl-legend',root),plot=el('div','kl-plot',root);
     const draw=()=>{
@@ -358,7 +531,7 @@
           data=await dataPromise;
         }
         root.replaceChildren();
-        const redraw=({gaussian,categorical,holeness,empirical,rewards})[kind](root,data);
+        const redraw=({gaussian,categorical,holeness,gaussianGradients,categoricalGradients,gradientNoise,empirical,rewards})[kind](root,data);
         let oldWidth=host.clientWidth,frame;
         new ResizeObserver(()=>{
           if(host.clientWidth!==oldWidth) {oldWidth=host.clientWidth;cancelAnimationFrame(frame);frame=requestAnimationFrame(redraw);}
