@@ -124,6 +124,7 @@
 .kl-hole-variances { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px 10px; font-size:11px; white-space:nowrap; }
 
 .kl-gradient-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+.kl-toy-grid .kl-toy-wide { grid-column:1 / -1; }
 .kl-gradient-tooltip { width:224px; max-width:calc(100% - 4px); background:var(--kl-bg); padding:8px 10px; font-size:11px; line-height:1.45; border-radius:6px; }
 .kl-tooltip-floating { position:fixed; z-index:20; max-width:calc(100vw - 20px); max-height:calc(100vh - 20px); }
 .kl-gradient-tooltip svg { margin:3px 0 0; }

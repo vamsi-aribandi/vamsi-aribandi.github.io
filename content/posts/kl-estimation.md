@@ -181,211 +181,158 @@ Let {{< klmath inline=true >}}p_\theta{{< /klmath >}} be the policy we are learn
 - **In reward:** use {{< klmath inline=true >}}-k_i(x){{< /klmath >}} as a detached reward. The corresponding penalty gradient is {{< klmath inline=true >}}g_i=\mathbb{E}_{p_\theta}[k_i(x)\nabla_\theta\log p_\theta(x)]{{< /klmath >}}.
 - **As a direct loss:** backpropagate through {{< klmath inline=true >}}k_i(x){{< /klmath >}}, holding the sampled action fixed. The expected gradient is {{< klmath inline=true >}}\mathbb{E}_{p_\theta}[\nabla_\theta k_i(x)]{{< /klmath >}}.
 
-In either case, we subtract the penalty gradient when updating the policy. These two implementations can behave very differently.
+In either case, we subtract the penalty gradient when updating the policy. We compare three combinations: {{< klmath inline=true >}}k_1{{< /klmath >}} in reward, {{< klmath inline=true >}}k_3{{< /klmath >}} in reward, and {{< klmath inline=true >}}k_3{{< /klmath >}} as a direct loss. ({{< klmath inline=true >}}k_1{{< /klmath >}} as a direct loss has zero expected gradient, so we leave it out.)
 
-### The same Gaussians, a different question
+We use two toy policies, one for each distribution shape from earlier: a Gaussian and a categorical distribution with a rare action. Each gets one figure with three plots:
 
-Return to {{< klmath inline=true >}}p_\mu=\mathcal{N}(\mu,1){{< /klmath >}} and {{< klmath inline=true >}}q=\mathcal{N}(0,1){{< /klmath >}}. Both estimators have exactly the same expectation:
+1. **Variance of the KL estimate**, as the policy moves away from {{< klmath inline=true >}}q{{< /klmath >}}. This is what the earlier sections measured.
+2. **Variance of the gradient**: how noisy a single sample's contribution to the update is. This is what a minibatch averages.
+3. **Gradient descent**: the true {{< klmath inline=true >}}\mathrm{KL}[p_\theta\,\|\,q]{{< /klmath >}} after each step, using minibatches of 16 on-policy samples. Lines show the median of 2,000 runs, and shading covers the middle half.
 
-{{< klmath >}}
-\mathbb{E}_{p_\mu}[k_1]=\mathbb{E}_{p_\mu}[k_3]=\frac{\mu^2}{2},
-\qquad \frac{\partial D}{\partial\mu}=\mu.
-{{< /klmath >}}
+The vertical line in the first two plots marks where gradient descent starts. Hover over any plot to read off values.
 
-The score is {{< klmath inline=true >}}\partial_\mu\log p_\mu(x)=x-\mu{{< /klmath >}}. Multiplying by that score changes the comparison:
+### Gaussian
 
-{{< klmath >}}
-\begin{aligned}
-g_1&=\mathbb{E}_{p_\mu}[k_1(x)(x-\mu)]=\mu,\\
-g_3&=\mathbb{E}_{p_\mu}[k_3(x)(x-\mu)]=0.
-\end{aligned}
-{{< /klmath >}}
+Let {{< klmath inline=true >}}p_\mu=\mathcal{N}(\mu,1){{< /klmath >}} and {{< klmath inline=true >}}q=\mathcal{N}(0,1){{< /klmath >}}, and learn {{< klmath inline=true >}}\mu{{< /klmath >}}, starting from {{< klmath inline=true >}}\mu_0=1.5{{< /klmath >}} with learning rate 0.1.
 
-As a reward coefficient, {{< klmath inline=true >}}k_1{{< /klmath >}} gives the exact KL gradient. {{< klmath inline=true >}}k_3{{< /klmath >}} gives no expected update at all, even with infinitely many samples. Its control-variate term cancels the learning signal:
-
-{{< klmath >}}
-\mathbb{E}_{p_\mu}\!\left[\left(\frac{q(x)}{p_\mu(x)}-1\right)(x-\mu)\right]=-\mu.
-{{< /klmath >}}
-
-Directly differentiating {{< klmath inline=true >}}k_3{{< /klmath >}}, on the other hand, gives an expected gradient of {{< klmath inline=true >}}\mu{{< /klmath >}} in this example. The plots below compare the gradients and the resulting optimization. Hover to inspect the distributions, KL values, and updates.
-
-{{< klfigure type="gaussianGradients" subtitle=`$p_\mu = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$` >}}
-Left: expected penalty gradients with respect to {{< klmath inline=true >}}\mu{{< /klmath >}}; the blue curve is the exact gradient of {{< klmath inline=true >}}\mathrm{KL}[p_\mu\,\|\,q]{{< /klmath >}}. Right: exact gradient updates from {{< klmath inline=true >}}\mu_0=1{{< /klmath >}}, with learning rate 0.15. The dashed green curve overlaps the blue curve. All curves use exact expectations, without sampling noise.
+{{< klfigure type="gaussianToy" data="klviz/toys.json" subtitle=`$p_\mu = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$ · start $\mu_0 = 1.5$ · batch 16 · learning rate 0.1` >}}
+First: variance of {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} as KL estimates. Second: per-sample variance of the gradient with respect to {{< klmath inline=true >}}\mu{{< /klmath >}}. Third: true KL during minibatch gradient descent; median of 2,000 runs, with the middle 50% shaded. All variances are exact.
 {{< /klfigure >}}
 
-### Two actions: the wrong direction
+- **{{< klmath inline=true >}}k_1{{< /klmath >}} in reward** gives an unbiased estimate of the KL gradient, {{< klmath inline=true >}}\mu{{< /klmath >}}, and converges.
+- **{{< klmath inline=true >}}k_3{{< /klmath >}} in reward** has an expected gradient of exactly zero, for every {{< klmath inline=true >}}\mu{{< /klmath >}}:
 
-A two-action policy makes the failure more striking. Let
+  {{< klmath >}}
+  \mathbb{E}_{p_\mu}[k_3(x)(x-\mu)]=\underbrace{\mathbb{E}_{p_\mu}[k_1(x)(x-\mu)]}_{=\,\mu}+\underbrace{\mathbb{E}_{p_\mu}\!\left[\left(\tfrac{q(x)}{p_\mu(x)}-1\right)(x-\mu)\right]}_{=\,-\mu}=0.
+  {{< /klmath >}}
 
-{{< klmath >}}
-p_\theta=(a,1-a),\qquad a=\sigma(\theta),\qquad q=(0.5,0.5).
-{{< /klmath >}}
+  The policy receives only noise and wanders: some runs drift closer to {{< klmath inline=true >}}q{{< /klmath >}} by chance, but the typical run never gets there.
+- **{{< klmath inline=true >}}k_3{{< /klmath >}} as a loss** also has expected gradient {{< klmath inline=true >}}\mu{{< /klmath >}} here, so on average it moves exactly like {{< klmath inline=true >}}k_1{{< /klmath >}} in reward. But at the start its gradient is 15 times noisier (87 versus 5.8), even though {{< klmath inline=true >}}k_3{{< /klmath >}} is only about 3 times noisier as a KL estimate. With batches of 16, the median run still keeps pace; the extra noise shows up as a wider spread between runs.
 
-Both estimators still have the same expectation, {{< klmath inline=true >}}D=a\log(2a)+(1-a)\log(2(1-a)){{< /klmath >}}. Their reward-coefficient gradients, with respect to the logit {{< klmath inline=true >}}\theta{{< /klmath >}}, are
+### Two actions with a rare action
 
-{{< klmath >}}
-\begin{aligned}
-g_1&=a(1-a)\log\frac{a}{1-a}=\frac{\partial D}{\partial\theta},\\
-g_3&=g_1+\frac12-a.
-\end{aligned}
-{{< /klmath >}}
+Let {{< klmath inline=true >}}p_\theta=(a,1-a){{< /klmath >}} with {{< klmath inline=true >}}a=\sigma(\theta){{< /klmath >}}, and {{< klmath inline=true >}}q=(0.5,0.5){{< /klmath >}}. We learn the logit {{< klmath inline=true >}}\theta{{< /klmath >}}, starting from {{< klmath inline=true >}}a_0=0.05{{< /klmath >}}, so the first action is rare under the policy, like the probability hole earlier. The learning rate is 1.
 
-At {{< klmath inline=true >}}a=0.8{{< /klmath >}}, both estimate a KL of 0.1927 nats, but {{< klmath inline=true >}}g_1\approx 0.2218{{< /klmath >}} and {{< klmath inline=true >}}g_3\approx -0.0782{{< /klmath >}}. Subtracting {{< klmath inline=true >}}g_1{{< /klmath >}} moves the policy toward the reference. Subtracting {{< klmath inline=true >}}g_3{{< /klmath >}} moves it **away**.
-
-There is a simple intuition here. At this policy, {{< klmath inline=true >}}k_3{{< /klmath >}} assigns a penalty of about 0.095 to the common action and 0.584 to the rare one. As a detached negative reward, it discourages the already underrepresented action even more. {{< klmath inline=true >}}k_1{{< /klmath >}} assigns the rare action a negative penalty, encouraging its probability to recover.
-
-{{< klfigure type="categoricalGradients" subtitle=`$p_\theta = (a, 1-a)$ · $a = \sigma(\theta)$ · $q = (0.5, 0.5)$` >}}
-Left: expected penalty gradients with respect to the logit {{< klmath inline=true >}}\theta{{< /klmath >}}. Right: exact gradient updates from {{< klmath inline=true >}}a_0=0.8{{< /klmath >}}, with learning rate 0.5. Using {{< klmath inline=true >}}k_3{{< /klmath >}} in reward increases the true KL. Directly differentiating {{< klmath inline=true >}}k_3{{< /klmath >}} pulls toward the reference, but its gradient differs from the blue curve.
+{{< klfigure type="categoricalToy" data="klviz/toys.json" subtitle=`$p_\theta = (a, 1-a)$ · $a = \sigma(\theta)$ · $q = (0.5, 0.5)$ · start $a_0 = 0.05$ · batch 16 · learning rate 1` >}}
+First: variance of {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} as KL estimates. Second: per-sample variance of the gradient with respect to the logit {{< klmath inline=true >}}\theta{{< /klmath >}}. Both are zero at {{< klmath inline=true >}}a=0.5{{< /klmath >}}, where {{< klmath inline=true >}}p=q{{< /klmath >}}. Third: true KL during minibatch gradient descent; median of 2,000 runs, with the middle 50% shaded.
 {{< /klfigure >}}
 
-{{< klcode title="Reproduce the gradients and optimization" >}}
+- **{{< klmath inline=true >}}k_1{{< /klmath >}} in reward** again follows the KL gradient and converges.
+- **{{< klmath inline=true >}}k_3{{< /klmath >}} in reward** goes the **wrong way**: the KL rises toward its maximum, {{< klmath inline=true >}}\log 2{{< /klmath >}}, as the rare action disappears. In expectation, its gradient is {{< klmath inline=true >}}g_1+\tfrac12-a{{< /klmath >}}, which points the wrong way for every {{< klmath inline=true >}}a\neq\tfrac12{{< /klmath >}}. The intuition: at the start, {{< klmath inline=true >}}k_3{{< /klmath >}} gives the rare action a penalty of 6.7 and the common action only 0.17, so as a detached reward it discourages the rare action even more. {{< klmath inline=true >}}k_1{{< /klmath >}} gives the rare action a negative penalty, {{< klmath inline=true >}}\log(0.05/0.5)<0{{< /klmath >}}, encouraging it to recover.
+- **{{< klmath inline=true >}}k_3{{< /klmath >}} as a loss** converges, and faster than {{< klmath inline=true >}}k_1{{< /klmath >}}, even though its gradient is the noisiest of the three. Its expected gradient is {{< klmath inline=true >}}a-\tfrac12{{< /klmath >}}, which is not the gradient of {{< klmath inline=true >}}\mathrm{KL}[p_\theta\,\|\,q]{{< /klmath >}}. As the next section shows, it is the gradient of the opposite direction, {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p_\theta]{{< /klmath >}}. That KL is large when {{< klmath inline=true >}}p{{< /klmath >}} has a hole, so it pushes harder here. Both KLs are minimized at {{< klmath inline=true >}}p=q{{< /klmath >}}, so with no task reward this only changes the path. With a task reward, the two directions would settle at different policies.
+
+{{< klcode title="Reproduce both figures" >}}
 import numpy as np
 
-
-def gaussian(mu):
-    # KL, k1 in reward, k3 in reward, k3 as direct loss.
-    return np.array([mu**2 / 2, mu, 0.0, mu])
+METHODS = ['k1_reward', 'k3_reward', 'k3_loss']
 
 
-def categorical(theta):
-    a = 1 / (1 + np.exp(-theta))
+def per_sample(log_ratio, score):
+    """Per-sample KL estimates and gradient estimates, given log p/q and score."""
+    k1 = log_ratio
+    k3 = log_ratio + np.expm1(-log_ratio)
+    gradients = {
+        'k1_reward': k1 * score,                 # k1 as a detached reward
+        'k3_reward': k3 * score,                 # k3 as a detached reward
+        'k3_loss': -np.expm1(-log_ratio) * score,  # d k3 / d theta, sample fixed
+    }
+    return k1, k3, gradients
+
+
+# Gaussian: p = N(mu, 1), q = N(0, 1), learn mu.
+def gaussian_samples(mu, eps):
+    x = mu + eps
+    return mu * x - mu**2 / 2, x - mu   # log p/q, d log p / d mu
+
+
+def gaussian_kl(mu):
+    return mu**2 / 2
+
+
+# Two actions: p = (a, 1 - a), a = sigmoid(theta), q = (0.5, 0.5), learn theta.
+def categorical_outcomes(a):
     p = np.array([a, 1 - a])
-    q = np.array([0.5, 0.5])
-    score = np.array([1 - a, -a])  # d log p / d theta
-    k1 = np.log(p / q)
-    k3 = k1 + q / p - 1
-    assert np.isclose(p @ k1, p @ k3)
-    return np.array([
-        p @ k1,
-        p @ (k1 * score),
-        p @ (k3 * score),
-        p @ ((1 - q / p) * score),
-    ])
+    return p, np.log(p / .5), np.array([1 - a, -a])   # probabilities, log p/q, score
 
 
-def optimize(metrics, initial, learning_rate, steps):
-    # Each column follows its own policy, updated with exact expectations.
-    parameters = np.full(3, initial, dtype=float)
-    kls = []
-    for step in range(steps + 1):
-        values = [metrics(t) for t in parameters]
-        kls.append([v[0] for v in values])
-        if step < steps:
-            parameters -= learning_rate * np.array([
-                values[i][i + 1] for i in range(3)
-            ])
-    return np.array(kls)
+def categorical_kl(theta):
+    # Stable in the logit: log a = -log(1 + e^-theta), log(1 - a) = -log(1 + e^theta).
+    log_a, log_b = -np.logaddexp(0, -theta), -np.logaddexp(0, theta)
+    return np.exp(log_a) * (log_a - np.log(.5)) + np.exp(log_b) * (log_b - np.log(.5))
 
 
-gaussian_kls = optimize(gaussian, 1.0, 0.15, 30)
-categorical_kls = optimize(categorical, np.log(4.0), 0.5, 80)
-print("KL and gradients at a=0.8:", categorical(np.log(4.0)))
-# [0.19274476, 0.22180710, -0.07819290, 0.30000000]
+def variances(family, value):
+    """Exact variances under p (Gauss-Hermite quadrature or a sum over actions)."""
+    if family == 'gaussian':
+        eps, w = np.polynomial.hermite_e.hermegauss(160)
+        w = w / w.sum()
+        k1, k3, g = per_sample(*gaussian_samples(value, eps))
+    else:
+        w, log_ratio, score = categorical_outcomes(value)
+        k1, k3, g = per_sample(log_ratio, score)
+    var = lambda v: w @ (v - w @ v)**2
+    return dict(k1=var(k1), k3=var(k3), **{m: var(g[m]) for m in METHODS})
+
+
+def descend(family, start, rate, steps, batch=16, seeds=2000, seed=0):
+    """Minibatch gradient descent from mu (Gaussian) or a (two actions)."""
+    rng = np.random.default_rng(seed)
+    if family == 'categorical':
+        start = np.log(start / (1 - start))   # update the logit theta
+    kls = {}
+    for method in METHODS:
+        theta = np.full(seeds, start, dtype=float)
+        history = []
+        for step in range(steps + 1):
+            if family == 'gaussian':
+                history.append(gaussian_kl(theta))
+                log_ratio, score = gaussian_samples(theta[:, None], rng.normal(size=(seeds, batch)))
+            else:
+                history.append(categorical_kl(theta))
+                log_a, log_b = -np.logaddexp(0, -theta), -np.logaddexp(0, theta)
+                a = np.exp(log_a)[:, None]
+                first = rng.random((seeds, batch)) < a   # sampled action 1?
+                log_ratio = np.where(first, log_a[:, None], log_b[:, None]) - np.log(.5)
+                score = np.where(first, 1 - a, -a)
+            gradient = per_sample(log_ratio, score)[2][method].mean(axis=1)
+            theta = theta - rate * gradient
+        kls[method] = np.array(history)
+    return kls
+
+
+# Values at the starting points, and median KL after 20 steps.
+print(variances('gaussian', 1.5))
+print(variances('categorical', 0.05))
+for family, start, rate in [('gaussian', 1.5, 0.1), ('categorical', 0.05, 1.0)]:
+    kls = descend(family, start, rate, steps=20)
+    print(family, {m: np.median(k[-1]) for m, k in kls.items()})
 {{< /klcode >}}
 
-### What changes when we differentiate the loss?
+### Why the gradients differ
 
-Why can two unbiased estimates lead to different updates? Differentiating an expectation has two terms:
+Why can two unbiased estimates of KL lead to different updates? Differentiating an expectation has two terms:
 
 {{< klmath >}}
 \nabla_\theta\mathbb{E}_{p_\theta}[k_i]
 =
-\underbrace{\mathbb{E}_{p_\theta}[k_i\nabla_\theta\log p_\theta]}_{\text{detached reward coefficient}}
+\underbrace{\mathbb{E}_{p_\theta}[k_i\nabla_\theta\log p_\theta]}_{\text{in reward}}
 +
-\underbrace{\mathbb{E}_{p_\theta}[\nabla_\theta k_i]}_{\text{direct loss gradient}}.
+\underbrace{\mathbb{E}_{p_\theta}[\nabla_\theta k_i]}_{\text{as a direct loss}}.
 {{< /klmath >}}
 
-The first accounts for the changing sampling distribution; the second differentiates the estimator at a fixed sample. The **sum** is the same KL gradient for both estimators. The implementations above each keep only one term.
-
-Write {{< klmath inline=true >}}D_R=\mathrm{KL}[p_\theta\,\|\,q]{{< /klmath >}} and {{< klmath inline=true >}}D_F=\mathrm{KL}[q\,\|\,p_\theta]{{< /klmath >}}. With on-policy samples, fixed {{< klmath inline=true >}}q{{< /klmath >}}, and common support, the expected gradients are:
+The first term accounts for the changing sampling distribution; the second differentiates the estimator at a fixed sample. Their **sum** is the same KL gradient for both estimators, but each implementation keeps only one term. Write {{< klmath inline=true >}}D_R=\mathrm{KL}[p_\theta\,\|\,q]{{< /klmath >}} and {{< klmath inline=true >}}D_F=\mathrm{KL}[q\,\|\,p_\theta]{{< /klmath >}}. With on-policy samples and a fixed {{< klmath inline=true >}}q{{< /klmath >}}, the expected gradients are:
 
 | Estimator | In reward | As a direct loss |
 | --- | --- | --- |
 | {{< klmath inline=true >}}k_1{{< /klmath >}} | {{< klmath inline=true >}}\nabla D_R{{< /klmath >}} | {{< klmath inline=true >}}0{{< /klmath >}} |
 | {{< klmath inline=true >}}k_3{{< /klmath >}} | {{< klmath inline=true >}}\nabla D_R-\nabla D_F{{< /klmath >}} | {{< klmath inline=true >}}\nabla D_F{{< /klmath >}} |
 
-So {{< klmath inline=true >}}k_3{{< /klmath >}} can provide a restoring gradient as a direct loss, but it generally gives the gradient of the **opposite KL direction**. The two directions happen to coincide for our equal-variance Gaussians. For the two-action policy, its direct-loss gradient is {{< klmath inline=true >}}a-0.5{{< /klmath >}}, which differs from {{< klmath inline=true >}}\partial_\theta D_R{{< /klmath >}}. This distinction between value estimation and gradient estimation is also analyzed in [Rethinking KL Regularization in RLHF](https://arxiv.org/abs/2510.01555).
-
-## A better KL estimate is not a better gradient
-
-{{< klmath inline=true >}}k_3{{< /klmath >}} is usually chosen because it estimates the KL value with lower variance. In training, though, what we average over a minibatch is the per-sample **gradient**, not the KL estimate. Does the variance advantage carry over?
-
-We compare two common choices: {{< klmath inline=true >}}k_1{{< /klmath >}} in reward, which is unbiased for {{< klmath inline=true >}}\nabla D_R{{< /klmath >}}, and {{< klmath inline=true >}}k_3{{< /klmath >}} as a direct loss, which is how {{< klmath inline=true >}}k_3{{< /klmath >}} is typically used as a KL penalty.
-
-### The Gaussian case: unbiased, but noisier
-
-For {{< klmath inline=true >}}p_\mu=\mathcal{N}(\mu,1){{< /klmath >}} and {{< klmath inline=true >}}q=\mathcal{N}(0,1){{< /klmath >}}, both choices have expected gradient {{< klmath inline=true >}}\mu{{< /klmath >}}, so only their noise differs. With {{< klmath inline=true >}}t=\mu^2{{< /klmath >}}, the exact per-sample variances are:
-
-{{< klmath >}}
-\begin{aligned}
-\operatorname{Var}(k_1)&=t, &\operatorname{Var}(k_3)&=e^t-1-t,\\
-\operatorname{Var}(k_1\,\partial_\mu\log p_\mu)&=2t+\tfrac14 t^2, &\operatorname{Var}(\partial_\mu k_3)&=e^t(1+4t)-1-3t.
-\end{aligned}
-{{< /klmath >}}
-
-At {{< klmath inline=true >}}\mu=0.5{{< /klmath >}}, {{< klmath inline=true >}}k_3{{< /klmath >}} estimates the KL with 7.3× lower variance (0.034 versus 0.25), yet its gradient has 1.6× **higher** variance (0.82 versus 0.52). Near the reference, both per-sample gradients reduce to {{< klmath inline=true >}}\mu(x-\mu)^2{{< /klmath >}} to first order, so their variances agree at about {{< klmath inline=true >}}2\mu^2{{< /klmath >}}, even though the variance of {{< klmath inline=true >}}k_3{{< /klmath >}} as a value estimate is much smaller, about {{< klmath inline=true >}}\mu^4/2{{< /klmath >}}. The control variate that makes {{< klmath inline=true >}}k_3{{< /klmath >}} a good value estimate does not carry over to the gradient, and farther from the reference the {{< klmath inline=true >}}q/p{{< /klmath >}} tail makes the gradient noisier. This ordering also holds when each method uses its own variance-minimizing scalar baseline (0.50 versus 0.76 at {{< klmath inline=true >}}\mu=0.5{{< /klmath >}}).
-
-{{< klfigure type="gradientNoise" subtitle=`$p_\mu = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$ · only $\mu$ is learned` >}}
-Left: exact variance of the KL estimates. Right: exact per-sample variance of the gradient with respect to {{< klmath inline=true >}}\mu{{< /klmath >}}, for {{< klmath inline=true >}}k_1{{< /klmath >}} in reward (blue) and {{< klmath inline=true >}}k_3{{< /klmath >}} as a direct loss (dashed green). Both gradients are unbiased in this example. Logarithmic vertical axes.
-{{< /klfigure >}}
-
-{{< klcode title="Check the Gaussian gradient variances" >}}
-import numpy as np
-
-rng = np.random.default_rng(0)
-
-# p = N(mu, 1), q = N(0, 1); only mu is learned.
-mu = 0.5
-eps = rng.normal(size=4_000_000)
-x = mu + eps
-log_ratio = mu * x - 0.5 * mu**2   # log p(x) - log q(x)
-score = x - mu                     # d log p(x) / d mu
-
-k1 = log_ratio
-k3 = log_ratio + np.expm1(-log_ratio)
-k1_reward = k1 * score                       # detached reward coefficient
-k3_loss = -np.expm1(-log_ratio) * score      # d k3 / d mu at fixed x
-
-t = mu**2
-print("KL estimate variance:", k1.var(), k3.var())   # t, e^t - 1 - t
-print("gradient mean:", k1_reward.mean(), k3_loss.mean())  # both mu
-print("gradient variance:", k1_reward.var(), k3_loss.var())
-print("exact:", 2 * t + t**2 / 4, np.exp(t) * (1 + 4 * t) - 1 - 3 * t)
-{{< /klcode >}}
-
-### Same KL, three different answers
-
-Return to {{< klmath inline=true >}}q=(0.1,0.45,0.45){{< /klmath >}} and the two distributions from earlier, and add a third, {{< klmath inline=true >}}p_3\approx(0.257,0.372,0.372){{< /klmath >}}, which moves mass **toward** the rare outcome. All three have exactly the same {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]\approx 0.0997{{< /klmath >}}. Gradients are taken with respect to three softmax logits, each method uses its own variance-minimizing scalar baseline, and the {{< klmath inline=true >}}k_3{{< /klmath >}} column also lists the squared bias of its expected gradient relative to {{< klmath inline=true >}}\nabla D_R{{< /klmath >}}:
-
-| | {{< klmath inline=true >}}\operatorname{Var}(k_1){{< /klmath >}} | {{< klmath inline=true >}}\operatorname{Var}(k_3){{< /klmath >}} | {{< klmath inline=true >}}k_1{{< /klmath >}} in reward: gradient variance | {{< klmath inline=true >}}k_3{{< /klmath >}} as loss: gradient variance | {{< klmath inline=true >}}k_3{{< /klmath >}} as loss: squared bias |
-| --- | --- | --- | --- | --- | --- |
-| {{< klmath inline=true >}}p_1{{< /klmath >}}, hole | 0.022 | 8.90 | 0.033 | 14.6 | 0.013 |
-| {{< klmath inline=true >}}p_2{{< /klmath >}}, smooth shift | 0.178 | 0.0065 | 0.025 | 0.047 | 0.0018 |
-| {{< klmath inline=true >}}p_3{{< /klmath >}}, more mass on the rare outcome | 0.245 | 0.019 | 0.115 | 0.060 | 0.0053 |
-
-For a minibatch of {{< klmath inline=true >}}N{{< /klmath >}} samples, the gradient's mean squared error is the squared bias plus the variance divided by {{< klmath inline=true >}}N{{< /klmath >}}. For the hole, {{< klmath inline=true >}}k_3{{< /klmath >}} is worse on every count. For the smooth shift, {{< klmath inline=true >}}k_3{{< /klmath >}} is 27× better as a value estimate, but its gradient is both noisier and biased, so it is worse at every batch size. Only for {{< klmath inline=true >}}p_3{{< /klmath >}} does the lower value variance carry over to the gradient, and even there {{< klmath inline=true >}}k_3{{< /klmath >}} has lower gradient error only for batches smaller than about 10. Beyond that, the bias floor dominates.
-
-These examples are not unusual. On a grid of 2,964 three-outcome pairs {{< klmath inline=true >}}(p,q){{< /klmath >}}, {{< klmath inline=true >}}k_3{{< /klmath >}} had lower value variance in 2,274. In 1,757 of those, its direct-loss gradient had **higher** variance than {{< klmath inline=true >}}k_1{{< /klmath >}} in reward, with baselines for both. Counting bias, {{< klmath inline=true >}}k_3{{< /klmath >}} had lower gradient error in only 236 of them at batch size 4, and 2 at batch size 256.
-
-### What happens during optimization
-
-Finally, we ran stochastic gradient descent on {{< klmath inline=true >}}\mathbb{E}_{p_\theta}[-R]+\mathrm{KL}[p_\theta\,\|\,q]{{< /klmath >}} with minibatches of 32 on-policy samples and 512 samples in total. Each method used its own optimal scalar baseline and its own learning rate, tuned on 1,024 seeds; the table reports the mean excess objective above the optimum on 4,096 separate seeds (lower is better). Only the policy mean is learned.
-
-| Policy and reward | {{< klmath inline=true >}}k_1{{< /klmath >}} in reward | {{< klmath inline=true >}}k_3{{< /klmath >}} as loss |
-| --- | --- | --- |
-| {{< klmath inline=true >}}\mathcal{N}(\mu,1){{< /klmath >}}, {{< klmath inline=true >}}\mu_0=2{{< /klmath >}}, no reward | {{< klmath inline=true >}}<10^{-20}{{< /klmath >}} | 0.14 |
-| {{< klmath inline=true >}}\mathcal{N}(\mu,0.6){{< /klmath >}}, {{< klmath inline=true >}}\mu_0=0.5{{< /klmath >}}, no reward | 0.0011 | 0.012 |
-| {{< klmath inline=true >}}\mathcal{N}(\mu,2){{< /klmath >}}, {{< klmath inline=true >}}\mu_0=0.5{{< /klmath >}}, no reward | 0.0021 | **0.0010** |
-| {{< klmath inline=true >}}\mathcal{N}(\mu,2){{< /klmath >}}, {{< klmath inline=true >}}\mu_0=0.5{{< /klmath >}}, {{< klmath inline=true >}}R(x)=0.1x{{< /klmath >}} | **0.0021** | 0.0066 |
-
-{{< klmath inline=true >}}k_3{{< /klmath >}} as a loss won once: for the wide policy without a task reward. There, its gradient is far less noisy (0.09 versus 1.25 per sample at the start), and its target, {{< klmath inline=true >}}D_F{{< /klmath >}}, has the same minimizer as {{< klmath inline=true >}}D_R{{< /klmath >}}, so its bias costs nothing. Adding a small task reward separates the two objectives: {{< klmath inline=true >}}D_R{{< /klmath >}} puts the optimum at {{< klmath inline=true >}}\mu=0.1{{< /klmath >}}, but {{< klmath inline=true >}}D_F{{< /klmath >}} pulls the policy to {{< klmath inline=true >}}\mu=0.2{{< /klmath >}}, leaving an excess of 0.005 that no amount of data removes. In the narrow and far cases, the {{< klmath inline=true >}}q/p{{< /klmath >}} tail dominates and {{< klmath inline=true >}}k_3{{< /klmath >}} is an order of magnitude worse or more.
-
-The categorical hole is a reminder that a toy can still surprise: with {{< klmath inline=true >}}p(x_1)=0.001{{< /klmath >}}, the rare outcome is seldom sampled, and the median run of every method barely moved in 512 samples. At batch size 32, the runs that did escape made {{< klmath inline=true >}}k_3{{< /klmath >}} as a loss better on average (0.061 versus 0.095 excess). These are small, fixed-budget experiments with oracle baselines and plain SGD, without clipping, Adam, or off-policy samples. They are not LLM results, but they show that value variance alone does not predict which estimator trains better.
+For the equal-variance Gaussians, {{< klmath inline=true >}}\nabla D_R=\nabla D_F=\mu{{< /klmath >}}, which is why {{< klmath inline=true >}}k_3{{< /klmath >}} in reward gets exactly zero and {{< klmath inline=true >}}k_3{{< /klmath >}} as a loss gets the right answer. For the two-action policy, {{< klmath inline=true >}}\nabla D_F=a-\tfrac12{{< /klmath >}} differs from {{< klmath inline=true >}}\nabla D_R{{< /klmath >}}. This distinction between value estimation and gradient estimation is also analyzed in [Rethinking KL Regularization in RLHF](https://arxiv.org/abs/2510.01555).
 
 ## Epilogue
 
-The shape of the distributions matters when choosing an estimator to **measure** KL. When using that estimate to **optimize** a policy, we also need to ask where gradients flow, and how noisy those gradients are.
+The shape of the distributions matters when choosing an estimator to **measure** KL. When using that estimate to **optimize** a policy, two more questions matter: which gradient does the implementation actually produce, and how noisy is it?
 
-For the on-policy setting above, {{< klmath inline=true >}}k_1{{< /klmath >}} as a detached reward coefficient gives the gradient of {{< klmath inline=true >}}\mathrm{KL}[p_\theta\,\|\,q]{{< /klmath >}}. Substituting {{< klmath inline=true >}}k_3{{< /klmath >}} preserves the expected KL value but changes the expected update: it can cancel the learning signal or even reverse its direction. Directly differentiating {{< klmath inline=true >}}k_3{{< /klmath >}} gives yet another update, corresponding to {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p_\theta]{{< /klmath >}}.
+With on-policy samples, {{< klmath inline=true >}}k_1{{< /klmath >}} as a detached reward gives an unbiased gradient of {{< klmath inline=true >}}\mathrm{KL}[p_\theta\,\|\,q]{{< /klmath >}}. Putting {{< klmath inline=true >}}k_3{{< /klmath >}} in the reward instead keeps the expected KL value but changes the expected update: it can cancel the learning signal or reverse it. Using {{< klmath inline=true >}}k_3{{< /klmath >}} as a direct loss optimizes the opposite direction, {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p_\theta]{{< /klmath >}}, and its gradient can be much noisier than {{< klmath inline=true >}}k_1{{< /klmath >}}'s, even where {{< klmath inline=true >}}k_3{{< /klmath >}} is the better estimate of the KL value.
 
-Even when {{< klmath inline=true >}}k_3{{< /klmath >}} is the better estimate of the KL value, its gradient is often the noisier one, and its bias toward the opposite KL direction sets a floor that larger batches cannot remove. An unbiased, low-variance estimate of KL is not necessarily a good estimate of its gradient. The objective, the gradient path, and the gradient's own variance determine which estimator is appropriate.
+A good estimate of KL is not necessarily a good estimate of its gradient. The objective, the gradient path, and the gradient's variance determine which estimator is appropriate.
