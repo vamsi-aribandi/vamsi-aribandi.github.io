@@ -7,9 +7,9 @@ klviz: true
 summary: "The best KL estimator depends on whether you measure KL or train on it. Why on-policy distillation puts k1 in the reward."
 ---
 
-KL divergence shows up twice in reinforcement learning for language models. As a leash, {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} keeps a policy near a reference. As a target, on-policy distillation (OPD) trains a student by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}} on the student's own samples.
+KL divergence {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[\log(p/q)]{{< /klmath >}} is an important quantity in AI. In reinforcement learning for language models, {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} is used as a regularizer to keep a learned policy near a reference policy, and on-policy distillation (OPD) lets a student policy learn from a teacher policy by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}.
 
-Exact KL is a sum over every possible sequence, so we estimate it from samples {{< klmath inline=true >}}x \sim p{{< /klmath >}}. Three estimators of {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[\log(p/q)]{{< /klmath >}} are common:
+The expectation in KL for LLMs is a sum over every possible sequence, which is intractable. So we estimate it from samples {{< klmath inline=true >}}x \sim p{{< /klmath >}}. Three estimators of KL are common:
 
 {{< klmath >}}
 \begin{aligned}
@@ -19,47 +19,28 @@ k_3(x) &= \log\frac{p(x)}{q(x)} + \frac{q(x)}{p(x)} - 1
 \end{aligned}
 {{< /klmath >}}
 
-{{< klmath inline=true >}}k_3{{< /klmath >}} comes from a note by John Schulman.[^schulman] It is unbiased like {{< klmath inline=true >}}k_1{{< /klmath >}} and never negative like {{< klmath inline=true >}}k_2{{< /klmath >}}, and it often has lower variance. DeepSeek uses it.[^deepseek] Thinking Machines' on-policy distillation uses {{< klmath inline=true >}}k_1{{< /klmath >}}.[^opd]
+These estimators are most well known from a note by John Schulman[^schulman]. {{< klmath inline=true >}}k_3{{< /klmath >}} in particular is unbiased like {{< klmath inline=true >}}k_1{{< /klmath >}} and never negative like {{< klmath inline=true >}}k_2{{< /klmath >}}, and it is claimed to have lower variance. DeepSeek[^deepseek] uses {{< klmath inline=true >}}k_3{{< /klmath >}} as a surrogate loss. Thinking Machines uses {{< klmath inline=true >}}k_1{{< /klmath >}} for on-policy distillation[^opd], and Cursor's Composer 2 uses {{< klmath inline=true >}}k_3{{< /klmath >}} as a regularizer for RLVR.
 
-Which one is right?
+Which estimator is optimal for learning reverse KL {{< klmath inline=true >}}\min_p\mathrm{KL}[p\,\|\,q]{{< /klmath >}}?
 
-Two questions hide in that one. Which estimator gives a better *estimate* of the KL? And which gives a better *gradient* when we train on it?
+This is best answered by answering two questions: which estimator gives a better *estimate* of KL, and which gives a better *gradient* when we train on it?
 
-The first has no single answer. It depends on the distributions. The second has a clean one:
-
-**{{< klmath inline=true >}}k_1{{< /klmath >}} in the reward gives the gradient of {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}}. {{< klmath inline=true >}}k_3{{< /klmath >}} does not, however good its estimate.**
-
-In RL we do not just report the KL. We train on it, and the gradient depends on where the estimator goes:
-
+TL;DR:
 - {{< klmath inline=true >}}k_1{{< /klmath >}} **in the reward** gives exactly the gradient of the reverse KL, {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}}. This is what OPD does.
 - {{< klmath inline=true >}}k_3{{< /klmath >}} **in the reward** gives the gradient of neither KL. It can vanish, or point the wrong way.
 - {{< klmath inline=true >}}k_3{{< /klmath >}} **as a loss** gives the gradient of the forward KL, {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p]{{< /klmath >}}. It converges, to something else.
 
-One identity explains all three. Three small toys show them.
+## Which estimator gives a better estimate of KL?
 
-## Neither estimator always wins
-
-{{< klmath inline=true >}}k_3{{< /klmath >}} adds one term to {{< klmath inline=true >}}k_1{{< /klmath >}}:
+It's easiest to compare {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} by observing that {{< klmath inline=true >}}k_3{{< /klmath >}} adds one term to {{< klmath inline=true >}}k_1{{< /klmath >}}:
 
 {{< klmath >}}
 k_3 = k_1 + \left(\frac{q}{p} - 1\right).
 {{< /klmath >}}
 
-The extra term has mean zero under {{< klmath inline=true >}}p{{< /klmath >}}, since {{< klmath inline=true >}}\mathbb{E}_p[q/p] = \sum_x p(x)\,\frac{q(x)}{p(x)} = \sum_x q(x) = 1{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} plus a control variate. It helps when it cancels noise, and hurts when it adds noise.
+This extra term has mean zero under {{< klmath inline=true >}}p{{< /klmath >}}, since {{< klmath inline=true >}}\mathbb{E}_p[q/p] = \sum_x p(x)\,\frac{q(x)}{p(x)} = \sum_x q(x) = 1{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} plus a control variate. It helps when it cancels noise, and hurts when it adds noise.
 
 Near {{< klmath inline=true >}}q{{< /klmath >}}, the ratio {{< klmath inline=true >}}q/p{{< /klmath >}} is close to 1, and {{< klmath inline=true >}}q/p - 1 \approx \log(q/p) = -k_1{{< /klmath >}}. The added term cancels most of the noise in {{< klmath inline=true >}}k_1{{< /klmath >}}.
-
-{{< klderiv title="Why k3 is quieter near q" >}}
-Write {{< klmath inline=true >}}q/p = 1 + \varepsilon{{< /klmath >}} for small {{< klmath inline=true >}}\varepsilon{{< /klmath >}}. Then {{< klmath inline=true >}}\log(1+\varepsilon) = \varepsilon - \varepsilon^2/2 + O(\varepsilon^3){{< /klmath >}}, so
-
-{{< klmath >}}
-k_1 = -\log(1+\varepsilon) \approx -\varepsilon,
-\qquad
-k_3 = \varepsilon - \log(1+\varepsilon) \approx \frac{\varepsilon^2}{2}.
-{{< /klmath >}}
-
-{{< klmath inline=true >}}k_1{{< /klmath >}} fluctuates at first order in {{< klmath inline=true >}}\varepsilon{{< /klmath >}}; {{< klmath inline=true >}}k_3{{< /klmath >}} only at second order. Its variance is correspondingly smaller.
-{{< /klderiv >}}
 
 Far from {{< klmath inline=true >}}q{{< /klmath >}}, the cancellation fails. Wherever {{< klmath inline=true >}}p{{< /klmath >}} is small but {{< klmath inline=true >}}q{{< /klmath >}} is not, {{< klmath inline=true >}}q/p{{< /klmath >}} is huge, and so is {{< klmath inline=true >}}k_3{{< /klmath >}}.
 
@@ -110,7 +91,11 @@ p_2(h) &= \left(0.2,\ 0.4+\delta,\ 0.4-\delta\right) &&\text{(a smooth shift)}
 \end{aligned}
 {{< /klmath >}}
 
-Each step in {{< klmath inline=true >}}h{{< /klmath >}} makes the first outcome ten times rarer under {{< klmath inline=true >}}p_1{{< /klmath >}}, and {{< klmath inline=true >}}\delta(h){{< /klmath >}} is chosen so that {{< klmath inline=true >}}\mathrm{KL}[p_1\,\|\,q] = \mathrm{KL}[p_2\,\|\,q]{{< /klmath >}}.
+Each step in {{< klmath inline=true >}}h{{< /klmath >}} makes the first outcome ten times rarer under {{< klmath inline=true >}}p_1{{< /klmath >}}, and {{< klmath inline=true >}}\delta(h){{< /klmath >}} is chosen so that the two KLs are equal at every {{< klmath inline=true >}}h{{< /klmath >}}:
+
+{{< klmath >}}
+\mathrm{KL}[p_1(h)\,\|\,q] = \mathrm{KL}[p_2(h)\,\|\,q] = a\log\frac{a}{0.2} + (1-a)\log\frac{1-a}{0.8}.
+{{< /klmath >}}
 
 {{< klfigure type="holeness" >}}
 Exact variances, logarithmic vertical axis. Solid lines use the hole {{< klmath inline=true >}}p_1{{< /klmath >}}; dashed lines use the smooth shift {{< klmath inline=true >}}p_2{{< /klmath >}}. Hover to see the distributions.
@@ -182,7 +167,7 @@ for h in hs:
 variances = np.array(variances)
 {{< /klcode >}}
 
-## Same KL, different gradients
+## Which estimator gives the best gradient?
 
 In RL, the KL estimate is not the end product. We differentiate it. There are two common ways, and they keep different halves of the same derivative:
 
