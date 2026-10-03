@@ -7,9 +7,9 @@ klviz: true
 summary: "The best KL estimator depends on whether you measure KL or train on it. Why on-policy distillation puts k1 in the reward."
 ---
 
-KL divergence {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[\log(p/q)]{{< /klmath >}} is an important quantity in AI. In reinforcement learning for language models, {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} is used as a regularizer to keep a learned policy near a reference policy, and on-policy distillation (OPD) lets a student policy learn from a teacher policy by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}.
+KL divergence {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[\log(p/q)]{{< /klmath >}} is an important quantity in AI. In reinforcement learning for language models, {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} is used as a regularizer to keep a learned policy {{< klmath inline=true >}}\pi_\theta{{< /klmath >}} near a reference policy {{< klmath inline=true >}}\pi_\mathrm{ref}{{< /klmath >}}, and on-policy distillation (OPD) lets a student policy {{< klmath inline=true >}}\pi_student{{< /klmath >}} learn from a teacher policy {{< klmath inline=true >}}\pi_teacher{{< /klmath >}} by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}.
 
-The expectation in KL for LLMs is a sum over every possible sequence, which is intractable. So we estimate it from samples {{< klmath inline=true >}}x \sim p{{< /klmath >}}. Three estimators of KL are common:
+Computing KL between language models is generally intractable, because the expectation {{< klmath inline=true >}}\mathbb{E}_p{{< /klmath >}} is a sum over every possible sequence of tokens, which is intractable. Instead we *estimate* it from samples {{< klmath inline=true >}}x \sim p{{< /klmath >}}. Three estimators of KL are common:
 
 {{< klmath >}}
 \begin{aligned}
@@ -19,7 +19,9 @@ k_3(x) &= \log\frac{p(x)}{q(x)} + \frac{q(x)}{p(x)} - 1
 \end{aligned}
 {{< /klmath >}}
 
-These estimators are most well known from a note by John Schulman[^schulman]. {{< klmath inline=true >}}k_3{{< /klmath >}} in particular is unbiased like {{< klmath inline=true >}}k_1{{< /klmath >}} and never negative like {{< klmath inline=true >}}k_2{{< /klmath >}}, and it is claimed to have lower variance. DeepSeek[^deepseek] uses {{< klmath inline=true >}}k_3{{< /klmath >}} as a surrogate loss. Thinking Machines uses {{< klmath inline=true >}}k_1{{< /klmath >}} for on-policy distillation[^opd], and Cursor's Composer 2 uses {{< klmath inline=true >}}k_3{{< /klmath >}} as a regularizer for RLVR.
+You might recall these estimators from a note by John Schulman[^schulman]. It shows that {{< klmath inline=true >}}k_3{{< /klmath >}} in particular is unbiased like {{< klmath inline=true >}}k_1{{< /klmath >}} and never negative like {{< klmath inline=true >}}k_2{{< /klmath >}}, with lower variance.
+
+However, which estimator to use is far from converged. DeepSeek[^deepseek] uses {{< klmath inline=true >}}k_3{{< /klmath >}} as a surrogate loss for RLVR. Thinking Machines uses {{< klmath inline=true >}}-k_1{{< /klmath >}} as a reward for on-policy distillation[^opd], and Cursor's Composer 2 uses {{< klmath inline=true >}}k_1{{< /klmath >}} as a regularizer.
 
 Which estimator is optimal for learning reverse KL {{< klmath inline=true >}}\min_p\mathrm{KL}[p\,\|\,q]{{< /klmath >}}?
 
@@ -30,7 +32,7 @@ TL;DR:
 - {{< klmath inline=true >}}k_3{{< /klmath >}} **in the reward** gives the gradient of neither KL. It can vanish, or point the wrong way.
 - {{< klmath inline=true >}}k_3{{< /klmath >}} **as a loss** gives the gradient of the forward KL, {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p]{{< /klmath >}}. It converges, to something else.
 
-## Which estimator gives a better estimate of KL?
+## Estimating the value of KL
 
 It's easiest to compare {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} by observing that {{< klmath inline=true >}}k_3{{< /klmath >}} adds one term to {{< klmath inline=true >}}k_1{{< /klmath >}}:
 
@@ -38,13 +40,10 @@ It's easiest to compare {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klm
 k_3 = k_1 + \left(\frac{q}{p} - 1\right).
 {{< /klmath >}}
 
-This extra term has mean zero under {{< klmath inline=true >}}p{{< /klmath >}}, since {{< klmath inline=true >}}\mathbb{E}_p[q/p] = \sum_x p(x)\,\frac{q(x)}{p(x)} = \sum_x q(x) = 1{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} plus a control variate. It helps when it cancels noise, and hurts when it adds noise.
+Notice that {{< klmath inline=true >}}\mathbb{E}_p[(q/p)-1] = \sum_x p(x)\,\frac{q(x)}{p(x)} - 1 = \sum_x q(x) - 1 = 0{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} plus a *control variate* -- it makes an estimator better when it cancels noise, and worse when it adds noise.
 
-Near {{< klmath inline=true >}}q{{< /klmath >}}, the ratio {{< klmath inline=true >}}q/p{{< /klmath >}} is close to 1, and {{< klmath inline=true >}}q/p - 1 \approx \log(q/p) = -k_1{{< /klmath >}}. The added term cancels most of the noise in {{< klmath inline=true >}}k_1{{< /klmath >}}.
-
-Far from {{< klmath inline=true >}}q{{< /klmath >}}, the cancellation fails. Wherever {{< klmath inline=true >}}p{{< /klmath >}} is small but {{< klmath inline=true >}}q{{< /klmath >}} is not, {{< klmath inline=true >}}q/p{{< /klmath >}} is huge, and so is {{< klmath inline=true >}}k_3{{< /klmath >}}.
-
-For {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}, {{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance at small KL and much higher variance at large KL:
+For {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}, as we vary {{< klmath inline=true >}}\mu{{< /klmath >}},
+{{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance at small KL and much higher variance at large KL:
 
 {{< klfigure type="gaussian" subtitle=`$p = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$` >}}{{< /klfigure >}}
 
@@ -80,7 +79,7 @@ exact_k3_vars = np.expm1(mus**2) - mus**2
 print(np.column_stack([kls, k1_vars, k3_vars]))
 {{< /klcode >}}
 
-The size of the KL is not the whole story. Shape matters too. The worst case for {{< klmath inline=true >}}k_3{{< /klmath >}} is a **hole**: an outcome that {{< klmath inline=true >}}q{{< /klmath >}} likes but {{< klmath inline=true >}}p{{< /klmath >}} almost never samples. There, {{< klmath inline=true >}}q/p{{< /klmath >}} is enormous on the rare draws that hit it.
+The size of the KL is not the whole story. Shape matters too. The worst case for {{< klmath inline=true >}}k_3{{< /klmath >}} an outcome that is likely under {{< klmath inline=true >}}q{{< /klmath >}} likes but not under {{< klmath inline=true >}}p{{< /klmath >}}. For those samples, {{< klmath inline=true >}}q/p{{< /klmath >}} explodes.
 
 To see this, fix {{< klmath inline=true >}}q = (0.2, 0.4, 0.4){{< /klmath >}} and compare two ways to move away from it with exactly the same KL:
 
