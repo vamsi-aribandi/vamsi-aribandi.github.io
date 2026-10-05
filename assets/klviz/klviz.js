@@ -61,7 +61,7 @@
     parent.replaceChildren();
     [...series, ...(reference ? [{label: reference.label, color: 'var(--kl-muted)', dashed: true}] : [])].forEach(s => {
       const item = el('span', '', parent);
-      const sw = el('i', s.dashed ? 'dashed' : '', item);
+      const sw = el('i', s.diamond ? 'diamond' : s.dashed ? 'dashed' : '', item);
       sw.style.setProperty('--series', s.color);
       sw.setAttribute('aria-hidden', 'true');
       appendMathText(item,s.label);
@@ -153,6 +153,11 @@
         if (cfg.dots !== false) a.forEach(p => add('circle', {cx:x(p.x),cy:y(p.y),r:3.5,class:'kl-dot',style:`--series:${s.color}`}));
       });
     });
+    (cfg.marks || []).forEach(p => {
+      if (p.shape !== 'diamond') {add('circle', {cx:x(p.x),cy:y(p.y),r:5,class:'kl-dot',style:`--series:${p.color}`});return;}
+      add('line', {x1:x(p.x),x2:x(p.x),y1:y(p.y),y2:h-m.b,class:'kl-mark-drop',style:`--series:${p.color}`});
+      add('path', {d:`M${x(p.x)},${y(p.y)-7}l7,7l-7,7l-7,-7Z`,class:'kl-mark',style:`--series:${p.color}`});
+    });
     const guide = add('line', {x1:0,x2:0,y1:m.t,y2:h-m.b,class:'kl-guide',visibility:'hidden'});
     // One marker per series, shown only while inspecting a value.
     const markers = cfg.series.map(s => add('circle', {r:4.5,class:'kl-dot',style:`--series:${s.color}`,visibility:'hidden'}));
@@ -227,18 +232,22 @@
       });
     }
   }
-  function gaussianInset(tooltip, kl) {
-    const mu=Math.sqrt(2*kl);
-    tooltip.classList.add('kl-gaussian-tooltip');
-    el('b','',tooltip,String.raw`$\mathrm{KL}[p\,\|\,q]$ = ${num(kl)} nats`);
-    const labels=el('div','kl-inset-labels',tooltip);
+  // Equal-variance Gaussians p = N(mu, 1), q = N(0, 1), indexed by KL = mu^2 / 2.
+  const gaussianMoments=kl=>({
+    mean:{k1:kl,k2:kl+kl*kl/2,k3:kl},
+    variance:{k1:2*kl,k2:2*kl*kl+2*kl**3,k3:Math.expm1(2*kl)-2*kl}
+  });
+  colors.k2='var(--kl-purple)';
+  function gaussianDensities(parent, mu) {
+    // p = N(mu, 1) and q = N(0, 1), with labels.
+    const labels=el('div','kl-inset-labels',parent);
     el('span','',labels,String.raw`$p = \mathcal{N}(${mu.toFixed(2)}, 1)$`).style.color=colors.k1;
     el('span','',labels,String.raw`$q = \mathcal{N}(0, 1)$`).style.color=colors.k3;
     const width=244,height=128,m={l:14,r:8,t:9,b:23};
     const x=v=>m.l+(v+3.5)/9.5*(width-m.l-m.r);
     const y=v=>height-m.b-v/.44*(height-m.t-m.b);
     const svg=svgEl('svg',{viewBox:`0 0 ${width} ${height}`,role:'img','aria-label':`Gaussian densities p with mean ${mu.toFixed(2)} and q with mean 0, both with variance 1.`});
-    tooltip.append(svg);
+    parent.append(svg);
     svg.append(svgEl('line',{x1:m.l,x2:width-m.r,y1:y(0),y2:y(0),class:'kl-axis'}));
     [-3,0,3,6].forEach(t=>svg.append(svgEl('text',{x:x(t),y:height-6,'text-anchor':'middle',class:'kl-tick'},String(t))));
     [{mean:mu,color:colors.k1},{mean:0,color:colors.k3}].forEach(d=>{
@@ -249,20 +258,33 @@
       svg.append(svgEl('path',{d:`M${x(-3.5)},${y(0)} L${path.slice(1)} L${x(6)},${y(0)} Z`,fill:d.color,opacity:'.12'}));
       svg.append(svgEl('path',{d:path,fill:'none',stroke:d.color,'stroke-width':2}));
     });
-    const values=el('div','kl-inset-values',tooltip);
-    el('span','',values,String.raw`$\operatorname{Var}_p(k_1)$ = ${num(2*kl)}`).style.color=colors.k1;
-    el('span','',values,String.raw`$\operatorname{Var}_p(k_3)$ = ${num(Math.expm1(2*kl)-2*kl)}`).style.color=colors.k3;
   }
-  function gaussian(root) {
+  function gaussianInset(tooltip, kl, moment) {
+    tooltip.classList.add('kl-gaussian-tooltip');
+    el('b','',tooltip,String.raw`$\mathrm{KL}[p\,\|\,q]$ = ${num(kl)} nats`);
+    gaussianDensities(tooltip,Math.sqrt(2*kl));
+    const values=el('div','kl-inset-values',tooltip), g=gaussianMoments(kl)[moment];
+    ['k1','k2','k3'].forEach(k=>{
+      const tex=moment==='mean'?String.raw`$\mathbb{E}_p[k_${k[1]}]$`:String.raw`$\operatorname{Var}_p(k_${k[1]})$`;
+      el('span','',values,`${tex} = ${num(g[k])}`).style.color=colors[k];
+    });
+  }
+  function gaussianChart(root, moment) {
     const leg=el('div','kl-legend',root),plot=el('div','kl-plot',root);
-    const series=[{label:'k₁',color:colors.k1,data:[]},{label:'k₃',color:colors.k3,data:[]}];
-    for(let i=2;i<=500;i++) {const mu=i*.005,d=mu*mu/2;series[0].data.push({x:d,y:mu*mu});series[1].data.push({x:d,y:Math.expm1(mu*mu)-mu*mu});}
+    const series=['k1','k2','k3'].map(k=>({label:`k${'₀₁₂₃'[k[1]]}`,color:colors[k],dashed:moment==='mean'&&k==='k3',data:[]}));
+    for(let i=2;i<=500;i++) {
+      const mu=i*.005,kl=mu*mu/2,g=gaussianMoments(kl)[moment];
+      series.forEach((s,j)=>s.data.push({x:kl,y:g[`k${j+1}`]}));
+    }
+    const mean=moment==='mean';
     const draw=()=>{
       legend(leg,series);
-      lineChart(plot,{series,xDomain:[0,3.125],xTicks:[0,1,2,3],logY:true,xLabel:'Exact KL[p ∥ q] (nats)',yLabel:'Estimator variance (nats²)',description:'Equal-variance Gaussians: hover to see p and q at each KL[p || q].',dots:false,renderTooltip:gaussianInset});
+      lineChart(plot,{series,xDomain:[0,3.125],xTicks:[0,1,2,3],logY:!mean,yDomain:mean?[0,8]:undefined,yTicks:mean?[0,2,4,6,8]:undefined,xLabel:'Exact KL[p ∥ q] (nats)',yLabel:mean?'Expected estimate (nats)':'Estimator variance (nats²)',description:`Equal-variance Gaussians: ${mean?'expected value':'variance'} of k1, k2 and k3. Hover to see p and q at each KL[p || q].`,dots:false,renderTooltip:(t,kl)=>gaussianInset(t,kl,moment)});
     };
     draw();return draw;
   }
+  function gaussian(root) {return gaussianChart(root,'variance');}
+  function gaussianBias(root) {return gaussianChart(root,'mean');}
   function categorical(root) {
     const q=[.1,.45,.45], cases=[{p:[.001,.4995,.4995],name:'p₁ · probability hole',color:colors.LLM},{p:[.1,.6577534291783038,.2422465708216962],name:'p₂ · smooth shift',color:colors.PPO}];
     const grid=el('div','kl-categorical',root);
@@ -522,7 +544,7 @@
   function bimodalToy(root, data) {
     const d=data.bimodal, every=d.every;
     const methods=[
-      {key:'k1_reward',label:'k₁ · reward',color:colors.k1},
+      {key:'k1_reward',label:'k₁ · reward = k₃ · both',color:colors.k1},
       {key:'k3_reward',label:'k₃ · reward',color:colors.k3},
       {key:'k3_loss',label:'k₃ · loss',color:'var(--kl-green)',dashed:true}
     ];
@@ -569,6 +591,157 @@
       lineChart(forwardPlot,{series:forwardSeries,xDomain:[0,d.steps],xTicks:steps,yDomain:[0,forwardMax],yTicks:[0,5,10,15],xLabel:'Gradient steps',yLabel:'KL[q ∥ p] (the other direction)',description:'Two-mode reference: median forward KL during minibatch gradient descent for each method.',dots:false,floatingTooltip:true,renderTooltip:stepTip});
       lineChart(densityPlot,{series:densitySeries,xDomain:[-6,6],xTicks:[-6,-4,-2,0,2,4,6],yDomain:[0,.9],yTicks:[0,.2,.4,.6,.8],xLabel:'x',yLabel:'Density after training',description:'Two-mode reference q and the median-run policy of each method after training.',dots:false,floatingTooltip:true,renderTooltip:densityTip});
     }
+    draw();return draw;
+  }
+  function pairs(root, data) {
+    // Random categorical pairs: error of k3 relative to k1, for the KL value
+    // and for the reverse-KL gradient. Bin medians, middle half shaded.
+    const d=data.pairs, leg=el('div','kl-legend',root), plot=el('div','kl-plot',root);
+    const at=(key)=>d.bins.map(b=>({x:b.x,y:b[key][1],lo:b[key][0],hi:b[key][2]}));
+    const series=[
+      {label:'KL estimate · k₃',color:colors.k3,data:at('estimate')},
+      {label:'Gradient · k₃ as a loss',color:'var(--kl-green)',dashed:true,data:at('k3_loss')}
+    ];
+    const reference={y:1,label:'Gradient · k₃ with both halves (= k₁)'};
+    const draw=()=>{
+      legend(leg,series,reference);
+      lineChart(plot,{series,reference,logX:true,logY:true,xDomain:[d.bins[0].lower,d.bins.at(-1).upper],yDomain:[1e-5,1e3],xLabel:'Exact KL[p ∥ q] (nats)',xTip:'KL[p ∥ q]',yLabel:'Error relative to k₁',description:`${d.count.toLocaleString('en-US')} random categorical pairs: mean squared error of a ${d.batch}-sample KL estimate and of a ${d.batch}-sample reverse-KL gradient, each relative to k1. Bin medians with the middle half shaded.`,dots:false});
+    };
+    draw();return draw;
+  }
+  function precision(root, data) {
+    // Gradient coefficient returned by autograd for three implementations
+    // that are all k1 * score in exact arithmetic, by floating-point type.
+    let dtype='bfloat16';
+    const controls=el('div','kl-controls',root);
+    tabs(controls,[['float32','float32'],['bfloat16','bfloat16'],['float16','float16']],dtype,v=>{dtype=v;draw();});
+    const leg=el('div','kl-legend',root),plot=el('div','kl-plot',root);
+    const methods=[
+      {key:'exact',label:'Exact: log p/q',color:'var(--kl-muted)',dashed:true},
+      {key:'k1_reward',label:'k₁ · reward',color:colors.k1},
+      {key:'k2_loss',label:'k₂ · loss',color:'var(--kl-purple)',dashed:true},
+      {key:'ratio_k3',label:'ratio × k₃ · loss (DeepSeek-V3.2)',color:colors.k3}
+    ];
+    const draw=()=>{
+      const d=data.dtypes[dtype];
+      const series=methods.map(m=>({...m,data:data.x.map((x,i)=>({x,y:d[m.key][i]==null?null:Math.max(-40,Math.min(15,d[m.key][i]))}))}));
+      legend(leg,series);
+      lineChart(plot,{series,xDomain:[-30,10],xTicks:[-30,-20,-10,0,10],yDomain:[-40,15],yTicks:[-40,-30,-20,-10,0,10],xLabel:'log p(x)/q(x) at the sampled token',xTip:'log p/q',yLabel:'Gradient returned (× score)',description:`Autograd gradient of each KL implementation in ${dtype}. All three should equal log p/q.`,dots:false});
+    };
+    draw();return draw;
+  }
+  function tokens(root, data) {
+    // Distribution of log p/q over sampled tokens, for two model pairs.
+    const leg=el('div','kl-legend',root),plot=el('div','kl-plot',root);
+    const pairs=[['distillation','Student 0.5B vs teacher 1.5B',colors.k1],['post-training','Instruct 0.5B vs base 0.5B',colors.k3]];
+    const series=pairs.map(([key,label,color])=>{
+      const d=data.pairs[key],n=d.tokens,width=d.edges[1]-d.edges[0];
+      return {label,color,data:d.counts.map((c,i)=>({x:(d.edges[i]+d.edges[i+1])/2,y:c>0?c/n:null}))};
+    });
+    const draw=()=>{
+      legend(leg,series);
+      lineChart(plot,{series,xDomain:[-30,10],xTicks:[-30,-20,-10,0,10],logY:true,yDomain:[1e-6,1],xLabel:'log p(x)/q(x) at the sampled token',xTip:'log p/q',yLabel:'Fraction of tokens',description:'Distribution of the per-token log ratio between policy and reference, for tokens sampled from the policy.',dots:true});
+    };
+    draw();return draw;
+  }
+  // k_lambda = l + lambda (q/p - 1) for p = N(mu, 1), q = N(0, 1), with KL = mu^2 / 2.
+  // Exact variance of the value estimate, and of its full gradient (l + 1 - lambda) s.
+  const lambdaMoments=(mu,lam)=>{
+    const kl=mu*mu/2;
+    return {value:2*kl*(1-2*lam)+lam*lam*Math.expm1(2*kl),gradient:(kl+1-lam)**2+4*kl};
+  };
+  const lambdaOptima=mu=>{
+    const kl=mu*mu/2;
+    return {kl,value:2*kl/Math.expm1(2*kl),gradient:1+kl};
+  };
+  const lambdaSeries=[
+    {key:'value',label:'Value estimate $k_\\lambda$',color:colors.k1},
+    {key:'gradient',label:'Full gradient ($k_\\lambda$ in reward and loss)',color:colors.k3}
+  ];
+  function gaussianLambda(root) {
+    let mu=1;
+    const head=el('div','kl-lambda-head',root);
+    const left=el('div','kl-lambda-side',head);
+    const controls=el('div','kl-controls',left);
+    const label=el('label','',controls);
+    appendMathText(label,'$\\mu$');
+    const slider=el('input','',label);
+    Object.assign(slider,{type:'range',min:.1,max:2.5,step:.05,value:mu});
+    const shown=el('span','',label);
+    const out=el('div','kl-readouts kl-lambda-readouts',left);
+    const densities=el('div','kl-lambda-densities',head);
+    const leg=el('div','kl-legend',root),plot=el('div','kl-plot',root);
+    slider.addEventListener('input',()=>{mu=Number(slider.value);draw();});
+    const lambdas=Array.from({length:121},(_,i)=>-1+i*.05);
+    legend(leg,[...lambdaSeries,{label:'Minimum',color:'var(--kl-ink)',diamond:true}]);
+    const draw=()=>{
+      shown.textContent=mu.toFixed(2);
+      const o=lambdaOptima(mu);
+      densities.replaceChildren();gaussianDensities(densities,mu);
+      readouts(out,[['KL[p ∥ q] (nats)',o.kl.toFixed(3)],['Best λ for the value',o.value.toFixed(2),colors.k1],['Best λ for the gradient',o.gradient.toFixed(2),colors.k3]]);
+      const series=lambdaSeries.map(s=>({...s,data:lambdas.map(x=>({x,y:lambdaMoments(mu,x)[s.key]}))}));
+      lineChart(plot,{series,logY:true,xDomain:[-1,5],xTicks:[-1,0,1,2,3,4,5],xLabel:'λ  (0 = k₁, 1 = k₃)',xTip:'λ',yLabel:'Variance (nats²)',dots:false,
+        marks:lambdaSeries.map(s=>({x:o[s.key],y:lambdaMoments(mu,o[s.key])[s.key],color:s.color,shape:'diamond'})),
+        description:`Variance of the k_lambda value estimate and of its full gradient against lambda, for p = N(${mu.toFixed(2)}, 1) and q = N(0, 1). Diamonds mark each minimum.`});
+    };
+    draw();return draw;
+  }
+  function lambdaDescent(root, data) {
+    // SGD on KL[p || q] for a softmax policy, with three choices of lambda.
+    let view='kl';
+    const controls=el('div','kl-controls',root);
+    tabs(controls,[['kl','KL during training'],['grad_var','Gradient variance'],['lam','λ used'],['sweep','Across learning rates']],view,v=>{view=v;draw();});
+    const leg=el('div','kl-legend',root),plot=el('div','kl-plot',root);
+    const rules=[
+      {key:'one',label:'λ = 1 ($k_3$)',color:'var(--kl-purple)'},
+      {key:'value',label:'Best λ for the value',color:colors.k1},
+      {key:'gradient',label:'Best λ for the gradient',color:colors.k3}
+    ];
+    const u=data.setup;
+    const draw=()=>{
+      let series,cfg;
+      if (view==='sweep') {
+        series=rules.map(r=>({...r,data:u.rates.map((x,i)=>{const v=data.sweep[r.key][i];return {x,y:v.median,lo:v.q25,hi:v.q75};})}));
+        cfg={logX:true,logY:true,xTicks:u.rates,xFormat:v=>String(v),xLabel:'Learning rate',xTip:'Learning rate',yLabel:`KL[p ∥ q] after ${u.steps} steps (nats)`,dots:true,
+          description:`Median final KL over ${u.seeds} seeds at each learning rate, with interquartile range.`};
+      } else {
+        series=rules.map(r=>{const v=data.runs[r.key][view];return {...r,data:v.median.map((y,i)=>({x:i,y,lo:v.q25[i],hi:v.q75[i]}))};});
+        const labels={kl:'KL[p ∥ q] (nats)',grad_var:'Gradient variance (trace)',lam:'λ'};
+        cfg={logY:view!=='lam',xLabel:'Step',xTip:'Step',yLabel:labels[view],dots:false,
+          description:`${labels[view]} during SGD at learning rate ${u.lr}, median over ${u.seeds} seeds with interquartile range.`};
+      }
+      legend(leg,series);
+      lineChart(plot,{series,...cfg});
+    };
+    draw();return draw;
+  }
+  function clipTraining(root, data) {
+    // Training curves for four KL placements around a PPO clipped surrogate.
+    let mode='exact',metric='gap';
+    const controls=el('div','kl-controls',root);
+    tabs(controls,[['exact','Exact expectation'],['sampled',`Sampled, ${data.setup.seeds} seeds`]],mode,v=>{mode=v;draw();});
+    tabs(controls,[['gap','Objective gap'],['clipped','Clipped fraction'],['distortion','Gradient distortion']],metric,v=>{metric=v;draw();});
+    const leg=el('div','kl-legend',root),plot=el('div','kl-plot',root);
+    const arms=[
+      {key:'unclipped',label:'No clipping (all four)',color:'var(--kl-muted)',dashed:true},
+      {key:'k1_reward',label:'k₁ in the reward',color:colors.k1},
+      {key:'k2_loss',label:'k₂ as a loss',color:'var(--kl-purple)'},
+      {key:'ratio_k3_loss',label:'ratio × k₃ as a loss',color:colors.k3,dashed:true},
+      {key:'k3_split',label:'k₃ in the reward, ∇k₃ as a loss',color:'var(--kl-green)'}
+    ];
+    const labels={gap:'J* − J = β KL[p ∥ p*]',clipped:'Rollout mass in the clipped branch',distortion:'‖g − g_unclipped‖ ÷ ‖g_unclipped‖'};
+    const draw=()=>{
+      const t=data.training[mode],offset=metric==='gap'?0:1;
+      const series=arms.map(a=>{
+        const v=t[a.key][metric];
+        if (mode==='exact') return {...a,data:v.map((y,i)=>({x:i+offset,y}))};
+        return {...a,data:v.median.map((y,i)=>({x:i+offset,y,lo:v.q25[i],hi:v.q75[i]}))};
+      });
+      legend(leg,series);
+      lineChart(plot,{series,logY:metric==='gap',yDomain:metric==='gap'?[.01,3]:metric==='clipped'?[0,.3]:[0,3],percent:metric==='clipped',dots:false,
+        xLabel:`Rollouts (${data.setup.inner} updates each)`,xTip:'Rollout',yLabel:labels[metric],
+        description:`${metric} over training on a ${data.setup.actions}-action softmax bandit, beta ${data.setup.beta}, clip ${data.setup.eps}.`});
+    };
     draw();return draw;
   }
   function gaussianToy(root,data) {return toyFigure(root,data,'gaussian');}
@@ -621,13 +794,13 @@
       const root=host.querySelector('.kl-interactive'),kind=host.dataset.chart;
       try {
         let data;
-        if (['empirical','rewards','gaussianToy','categoricalToy','bimodalToy'].includes(kind)) {
+        if (['empirical','rewards','gaussianToy','categoricalToy','bimodalToy','pairs','precision','tokens','clipTraining','lambdaDescent'].includes(kind)) {
           const source=host.dataset.source;
           dataPromises[source] ||= fetch(source).then(r=>{if(!r.ok)throw Error(`Data fetch: ${r.status}`);return r.json();});
           data=await dataPromises[source];
         }
         root.replaceChildren();
-        const redraw=({gaussian,categorical,holeness,gaussianGradients,categoricalGradients,gaussianToy,categoricalToy,bimodalToy,empirical,rewards})[kind](root,data);
+        const redraw=({gaussian,gaussianBias,categorical,holeness,gaussianGradients,categoricalGradients,gaussianToy,categoricalToy,bimodalToy,pairs,precision,tokens,gaussianLambda,clipTraining,lambdaDescent,empirical,rewards})[kind](root,data);
         let oldWidth=host.clientWidth,frame;
         new ResizeObserver(()=>{
           if(host.clientWidth!==oldWidth) {oldWidth=host.clientWidth;cancelAnimationFrame(frame);frame=requestAnimationFrame(redraw);}

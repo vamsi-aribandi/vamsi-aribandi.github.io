@@ -4,12 +4,12 @@ date: 2026-09-30
 draft: true
 toc: false
 klviz: true
-summary: "The best KL estimator depends on whether you measure KL or train on it. Why on-policy distillation puts k1 in the reward."
+summary: "k1 in the reward, k2 as a loss and k3 in both give the same gradient of KL. The real choice is a baseline, and the λ that gives the best KL estimate is not the one that gives the best gradient."
 ---
 
-KL divergence {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[\log(p/q)]{{< /klmath >}} is an important quantity in AI. In reinforcement learning for language models, {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} is used as a regularizer to keep a learned policy {{< klmath inline=true >}}\pi_\theta{{< /klmath >}} near a reference policy {{< klmath inline=true >}}\pi_\mathrm{ref}{{< /klmath >}}, and on-policy distillation (OPD) lets a student policy {{< klmath inline=true >}}\pi_student{{< /klmath >}} learn from a teacher policy {{< klmath inline=true >}}\pi_teacher{{< /klmath >}} by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}.
+KL divergence {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[\log(p/q)]{{< /klmath >}} is an important quantity in AI. In reinforcement learning for language models, {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} is used as a regularizer to keep a learned policy {{< klmath inline=true >}}\pi_\theta{{< /klmath >}} near a reference policy {{< klmath inline=true >}}\pi_\mathrm{ref}{{< /klmath >}}, and on-policy distillation (OPD) lets a student policy {{< klmath inline=true >}}\pi_\mathrm{student}{{< /klmath >}} learn from a teacher policy {{< klmath inline=true >}}\pi_\mathrm{teacher}{{< /klmath >}} by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}.
 
-Computing KL between language models is generally intractable, because the expectation {{< klmath inline=true >}}\mathbb{E}_p{{< /klmath >}} is a sum over every possible sequence of tokens, which is intractable. Instead we *estimate* it from samples {{< klmath inline=true >}}x \sim p{{< /klmath >}}. Three estimators of KL are common:
+Computing KL between language models is generally intractable, because the expectation {{< klmath inline=true >}}\mathbb{E}_p{{< /klmath >}} is a sum over every possible sequence of tokens. Instead we *estimate* it from samples {{< klmath inline=true >}}x \sim p{{< /klmath >}}. Three estimators of KL are common:
 
 {{< klmath >}}
 \begin{aligned}
@@ -21,159 +21,86 @@ k_3(x) &= \log\frac{p(x)}{q(x)} + \frac{q(x)}{p(x)} - 1
 
 You might recall these estimators from a note by John Schulman[^schulman]. It shows that {{< klmath inline=true >}}k_3{{< /klmath >}} in particular is unbiased like {{< klmath inline=true >}}k_1{{< /klmath >}} and never negative like {{< klmath inline=true >}}k_2{{< /klmath >}}, with lower variance.
 
-However, which estimator to use is far from converged. DeepSeek[^deepseek] uses {{< klmath inline=true >}}k_3{{< /klmath >}} as a surrogate loss for RLVR. Thinking Machines uses {{< klmath inline=true >}}-k_1{{< /klmath >}} as a reward for on-policy distillation[^opd], and Cursor's Composer 2 uses {{< klmath inline=true >}}k_1{{< /klmath >}} as a regularizer.
+However, which estimator to use is far from converged. DeepSeek[^deepseek] uses {{< klmath inline=true >}}k_3{{< /klmath >}} as a surrogate loss for RLVR. Thinking Machines uses {{< klmath inline=true >}}-k_1{{< /klmath >}} as a reward for on-policy distillation[^opd], and Cursor's Composer 2 uses {{< klmath inline=true >}}k_1{{< /klmath >}} as a regularizer[^cursor].
 
 Which estimator is optimal for learning reverse KL {{< klmath inline=true >}}\min_p\mathrm{KL}[p\,\|\,q]{{< /klmath >}}?
 
 This is best answered by answering two questions: which estimator gives a better *estimate* of KL, and which gives a better *gradient* when we train on it?
 
 TL;DR:
-- {{< klmath inline=true >}}k_1{{< /klmath >}} **in the reward** gives exactly the gradient of the reverse KL, {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}}. This is what OPD does.
-- {{< klmath inline=true >}}k_3{{< /klmath >}} **in the reward** gives the gradient of neither KL. It can vanish, or point the wrong way.
-- {{< klmath inline=true >}}k_3{{< /klmath >}} **as a loss** gives the gradient of the forward KL, {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p]{{< /klmath >}}. It converges, to something else.
+- As **estimates**, they differ. {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} are unbiased and {{< klmath inline=true >}}k_2{{< /klmath >}} is not; {{< klmath inline=true >}}k_3{{< /klmath >}} has the lowest variance near {{< klmath inline=true >}}q{{< /klmath >}} and the highest far from it.
+- As **gradients**, they do not. {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward, {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss, and {{< klmath inline=true >}}k_3{{< /klmath >}} in both the reward and the loss (as DeepSeek-V3.2 does) give the same gradient for every sample: exactly the gradient of the reverse KL.
+- The family {{< klmath inline=true >}}k_\lambda = k_1 + \lambda(\frac{q}{p} - 1){{< /klmath >}}, which contains {{< klmath inline=true >}}k_3{{< /klmath >}}, gives the right gradient for every {{< klmath inline=true >}}\lambda{{< /klmath >}}. In the gradient, {{< klmath inline=true >}}\lambda{{< /klmath >}} is just a baseline, and the {{< klmath inline=true >}}\lambda{{< /klmath >}} that minimizes the gradient's variance is not the one that minimizes the estimate's. Several published reasons for choosing an estimator are about the estimate, not the gradient.
 
 ## Estimating the value of KL
 
-It's easiest to compare {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} by observing that {{< klmath inline=true >}}k_3{{< /klmath >}} adds one term to {{< klmath inline=true >}}k_1{{< /klmath >}}:
+It's easiest to compare the estimators on two Gaussians, {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}, where everything has a closed form. As we vary {{< klmath inline=true >}}\mu{{< /klmath >}}, the KL is {{< klmath inline=true >}}\mu^2/2{{< /klmath >}}.
+
+First, bias. {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} are unbiased, so their expected value is the KL itself. {{< klmath inline=true >}}k_2{{< /klmath >}} overestimates, and the gap grows with the KL:
+
+{{< klfigure type="gaussianBias" subtitle=`$p = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$` >}}
+Expected value of each estimator. {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} lie on the true KL; {{< klmath inline=true >}}k_2{{< /klmath >}} has expectation {{< klmath inline=true >}}\mathrm{KL} + \mathrm{KL}^2/2{{< /klmath >}}. Hover to see {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}}.
+{{< /klfigure >}}
+
+Second, variance. {{< klmath inline=true >}}k_3{{< /klmath >}} adds one term to {{< klmath inline=true >}}k_1{{< /klmath >}}:
 
 {{< klmath >}}
 k_3 = k_1 + \left(\frac{q}{p} - 1\right).
 {{< /klmath >}}
 
-Notice that {{< klmath inline=true >}}\mathbb{E}_p[(q/p)-1] = \sum_x p(x)\,\frac{q(x)}{p(x)} - 1 = \sum_x q(x) - 1 = 0{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} plus a *control variate* -- it makes an estimator better when it cancels noise, and worse when it adds noise.
+Notice that {{< klmath inline=true >}}\mathbb{E}_p[(q/p)-1] = \sum_x p(x)\,\frac{q(x)}{p(x)} - 1 = \sum_x q(x) - 1 = 0{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} plus a *control variate* -- it makes an estimator better when it cancels noise, and worse when it adds noise. {{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance at small KL and much higher variance at large KL:
 
-For {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}, as we vary {{< klmath inline=true >}}\mu{{< /klmath >}},
-{{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance at small KL and much higher variance at large KL:
-
-{{< klfigure type="gaussian" subtitle=`$p = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$` >}}{{< /klfigure >}}
+{{< klfigure type="gaussian" subtitle=`$p = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$` >}}
+Variance of each estimator, logarithmic scale. Hover to see {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}}.
+{{< /klfigure >}}
 
 {{< klcode title="Gaussian example" >}}
 import numpy as np
 
 rng = np.random.default_rng(0)
 
-# p = N(mu, 1), q = N(0, 1)
-# KL[p || q] = mu^2 / 2
-mus = np.linspace(0.01, 2.5, 60)
-n = 500_000
-eps = rng.normal(size=n)
-
-kls = []
-k1_vars = []
-k3_vars = []
-
-for mu in mus:
-    x = mu + eps  # Sample from p = N(mu, 1).
-    # log p(x) - log q(x)
-    log_ratio = mu * x - 0.5 * mu**2
+# p = N(mu, 1), q = N(0, 1), so KL[p || q] = mu^2 / 2.
+eps = rng.normal(size=1_000_000)
+for mu in [0.5, 1.0, 1.5, 2.0]:
+    x = mu + eps                      # samples from p
+    log_ratio = mu * x - mu**2 / 2    # log p(x) - log q(x)
     k1 = log_ratio
+    k2 = log_ratio**2 / 2
     k3 = log_ratio + np.expm1(-log_ratio)
-
-    kls.append(0.5 * mu**2)
-    k1_vars.append(np.var(k1))
-    k3_vars.append(np.var(k3))
-
-# The JavaScript curves use the exact variances of these same estimators.
-exact_k1_vars = mus**2
-exact_k3_vars = np.expm1(mus**2) - mus**2
-print(np.column_stack([kls, k1_vars, k3_vars]))
+    kl = mu**2 / 2
+    # Exact: E[k2] = kl + kl^2 / 2; Var(k1) = 2 kl, Var(k2) = 2 kl^2 + 2 kl^3,
+    # Var(k3) = exp(2 kl) - 1 - 2 kl.
+    print(f'KL {kl:.3f}  means {k1.mean():.3f} {k2.mean():.3f} {k3.mean():.3f}  '
+          f'variances {k1.var():.3f} {k2.var():.3f} {k3.var():.3f}')
 {{< /klcode >}}
 
-The size of the KL is not the whole story. Shape matters too. The worst case for {{< klmath inline=true >}}k_3{{< /klmath >}} an outcome that is likely under {{< klmath inline=true >}}q{{< /klmath >}} likes but not under {{< klmath inline=true >}}p{{< /klmath >}}. For those samples, {{< klmath inline=true >}}q/p{{< /klmath >}} explodes.
+So as an estimate, the answer depends on how far {{< klmath inline=true >}}p{{< /klmath >}} is from {{< klmath inline=true >}}q{{< /klmath >}}. If all you want is to log the KL, {{< klmath inline=true >}}k_3{{< /klmath >}} is the best choice near {{< klmath inline=true >}}q{{< /klmath >}} and {{< klmath inline=true >}}k_1{{< /klmath >}} far from it.
 
-To see this, fix {{< klmath inline=true >}}q = (0.2, 0.4, 0.4){{< /klmath >}} and compare two ways to move away from it with exactly the same KL:
+## The gradient of KL
+
+In RL, the KL estimate is not the end product. We differentiate it. Write {{< klmath inline=true >}}s(x) = \nabla_\theta \log p_\theta(x){{< /klmath >}} for the score. Two facts do all the work. The score has mean zero:
+
+{{< klmath >}}
+\mathbb{E}_p[s] = \sum_x p\,\frac{\nabla p}{p} = \nabla \sum_x p = \nabla 1 = 0,
+{{< /klmath >}}
+
+and the gradient of the reverse KL is {{< klmath inline=true >}}\log\frac{p}{q}{{< /klmath >}} times the score, on average:
 
 {{< klmath >}}
 \begin{aligned}
-p_1(h) &= \left(a,\ \tfrac{1-a}{2},\ \tfrac{1-a}{2}\right), \quad a = 0.2\times 10^{-h} &&\text{(a hole)}\\
-p_2(h) &= \left(0.2,\ 0.4+\delta,\ 0.4-\delta\right) &&\text{(a smooth shift)}
+\nabla\,\mathrm{KL}[p\,\|\,q] &= \nabla \sum_x p \log\frac{p}{q} = \sum_x \nabla p\,\log\frac{p}{q} + \sum_x p\,\nabla \log p\\
+&= \mathbb{E}_p\!\left[\log\frac{p}{q}\,s\right] + \mathbb{E}_p[s] = \mathbb{E}_p\!\left[\log\frac{p}{q}\,s\right].
 \end{aligned}
 {{< /klmath >}}
 
-Each step in {{< klmath inline=true >}}h{{< /klmath >}} makes the first outcome ten times rarer under {{< klmath inline=true >}}p_1{{< /klmath >}}, and {{< klmath inline=true >}}\delta(h){{< /klmath >}} is chosen so that the two KLs are equal at every {{< klmath inline=true >}}h{{< /klmath >}}:
+Here {{< klmath inline=true >}}q{{< /klmath >}} does not depend on {{< klmath inline=true >}}\theta{{< /klmath >}}, so {{< klmath inline=true >}}\nabla \log q = 0{{< /klmath >}}. Any per-sample gradient whose mean is {{< klmath inline=true >}}\mathbb{E}_p[\log\frac{p}{q}\,s]{{< /klmath >}} follows the reverse KL. The rest of this section finds that gradient in each estimator.
 
-{{< klmath >}}
-\mathrm{KL}[p_1(h)\,\|\,q] = \mathrm{KL}[p_2(h)\,\|\,q] = a\log\frac{a}{0.2} + (1-a)\log\frac{1-a}{0.8}.
-{{< /klmath >}}
-
-{{< klfigure type="holeness" >}}
-Exact variances, logarithmic vertical axis. Solid lines use the hole {{< klmath inline=true >}}p_1{{< /klmath >}}; dashed lines use the smooth shift {{< klmath inline=true >}}p_2{{< /klmath >}}. Hover to see the distributions.
-{{< /klfigure >}}
-
-At the same KL, the hole drives the variance of {{< klmath inline=true >}}k_3{{< /klmath >}} up without bound, while the smooth shift keeps it small. Which estimator is better depends on how far {{< klmath inline=true >}}p{{< /klmath >}} is from {{< klmath inline=true >}}q{{< /klmath >}}, and on the shape of the difference.
-
-{{< klcode title="Vary the hole depth and match the KLs" >}}
-import numpy as np
-
-q = np.array([0.2, 0.4, 0.4])
-
-
-def exact_kl(p, q):
-    return np.sum(p * np.log(p / q))
-
-
-def matched_distributions(h):
-    a = 0.2 * 10.0**(-h)
-    p1 = np.array([a, (1 - a) / 2, (1 - a) / 2])
-    target = exact_kl(p1, q)
-
-    # KL([0.2, 0.4 + delta, 0.4 - delta] || q)
-    # increases monotonically with delta >= 0.
-    lo, hi = 0.0, 0.4 - 1e-12
-    for _ in range(70):
-        delta = (lo + hi) / 2
-        candidate = np.array([0.2, 0.4 + delta, 0.4 - delta])
-        if exact_kl(candidate, q) < target:
-            lo = delta
-        else:
-            hi = delta
-    delta = 0.0 if h == 0 else (lo + hi) / 2
-    p2 = np.array([0.2, 0.4 + delta, 0.4 - delta])
-    return p1, p2
-
-
-def exact_variances(p, q):
-    z = np.log(p / q)
-    k1 = z
-    k3 = z + np.expm1(-z)
-    mean = exact_kl(p, q)
-    return np.array([
-        np.sum(p * (k1 - mean)**2),
-        np.sum(p * (k3 - mean)**2),
-    ])
-
-
-# Inspect one setting of the hole depth.
-h = 2.0
-p1, p2 = matched_distributions(h)
-print("p1:", p1)
-print("p2:", p2)
-print("KL[p1 || q]:", exact_kl(p1, q))
-print("KL[p2 || q]:", exact_kl(p2, q))
-print("Var_p1(k1), Var_p1(k3):", exact_variances(p1, q))
-print("Var_p2(k1), Var_p2(k3):", exact_variances(p2, q))
-
-# Columns match the four JavaScript curves.
-# h=0 has zero variance and is omitted from the logarithmic plot.
-hs = np.linspace(0.01, 3.5, 350)
-variances = []
-for h in hs:
-    p1, p2 = matched_distributions(h)
-    assert np.isclose(exact_kl(p1, q), exact_kl(p2, q), atol=1e-12)
-    variances.append(np.concatenate([
-        exact_variances(p1, q), exact_variances(p2, q)
-    ]))
-variances = np.array(variances)
-{{< /klcode >}}
-
-## Which estimator gives the best gradient?
-
-In RL, the KL estimate is not the end product. We differentiate it. There are two common ways, and they keep different halves of the same derivative:
+An estimate {{< klmath inline=true >}}k(x){{< /klmath >}} can enter training in two ways. The gradient of its expectation has one term for each:
 
 {{< klmath >}}
 \nabla_\theta\,\mathbb{E}_{p_\theta}[k(x)]
 =
-\underbrace{\mathbb{E}_{p_\theta}\!\left[k(x)\,\nabla_\theta\log p_\theta(x)\right]}_{\text{in the reward}}
+\underbrace{\mathbb{E}_{p_\theta}\!\left[k(x)\,s(x)\right]}_{\text{in the reward}}
 +
 \underbrace{\mathbb{E}_{p_\theta}\!\left[\nabla_\theta k(x)\right]}_{\text{as a loss}}.
 {{< /klmath >}}
@@ -188,339 +115,203 @@ Write the expectation as a sum and differentiate both factors:
 Then use {{< klmath inline=true >}}\nabla_\theta p_\theta = p_\theta\,\nabla_\theta \log p_\theta{{< /klmath >}} in the first sum. Both sums become expectations under {{< klmath inline=true >}}p_\theta{{< /klmath >}}. For continuous {{< klmath inline=true >}}x{{< /klmath >}}, replace the sums with integrals.
 {{< /klderiv >}}
 
-- **In the reward:** treat {{< klmath inline=true >}}-k(x){{< /klmath >}} as a detached reward and take the policy gradient. Only the first term survives.
+- **In the reward:** treat {{< klmath inline=true >}}-k(x){{< /klmath >}} as a detached reward, or advantage, and take the policy gradient. Only the first term survives.
 - **As a loss:** backpropagate through {{< klmath inline=true >}}k(x){{< /klmath >}} with the sample {{< klmath inline=true >}}x{{< /klmath >}} held fixed. Only the second term survives.
 
-The KL we estimate, and want to minimize, is the **reverse KL**, {{< klmath inline=true >}}\mathrm{KL}[p_\theta\,\|\,q]{{< /klmath >}}: it averages over the policy's own samples. The **forward KL**, {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p_\theta]{{< /klmath >}}, averages over {{< klmath inline=true >}}q{{< /klmath >}} instead. Three facts finish the calculation:
+### {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward is the gradient
+
+The policy gradient with {{< klmath inline=true >}}k_1{{< /klmath >}} as the reward is
+
+{{< klmath >}}
+k_1\,s = \log\frac{p}{q}\,s,
+{{< /klmath >}}
+
+which is the gradient of KL sample by sample. The loss term it drops is {{< klmath inline=true >}}\nabla k_1 = \nabla\log p = s{{< /klmath >}}, which has mean zero.
+
+### {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss is the same gradient
+
+Differentiate the square with the chain rule:
+
+{{< klmath >}}
+\nabla k_2 = \nabla\,\frac12\left(\log\frac{p}{q}\right)^2 = \log\frac{p}{q}\,\nabla\!\left(\log p - \log q\right) = \log\frac{p}{q}\,s.
+{{< /klmath >}}
+
+This is the same number as {{< klmath inline=true >}}k_1\,s{{< /klmath >}} for every sample. Note what it is not: the gradient of {{< klmath inline=true >}}\mathbb{E}_p[k_2]{{< /klmath >}}. That expectation is {{< klmath inline=true >}}\mathrm{KL} + \mathrm{KL}^2/2{{< /klmath >}} for the Gaussians above, a different function, and by the split its gradient also has the reward term {{< klmath inline=true >}}\mathbb{E}_p[k_2\,s]{{< /klmath >}}, which is not zero. Using {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss drops that term, and dropping it is what makes the gradient right. Putting {{< klmath inline=true >}}k_2{{< /klmath >}} in the reward as well would follow the wrong objective.
+
+### {{< klmath inline=true >}}k_\lambda{{< /klmath >}} in both is the gradient, for every {{< klmath inline=true >}}\lambda{{< /klmath >}}
+
+Since {{< klmath inline=true >}}\mathbb{E}_p[\frac{q}{p} - 1] = \sum_x q - 1 = 0{{< /klmath >}}, any multiple of {{< klmath inline=true >}}\frac{q}{p} - 1{{< /klmath >}} can be added to {{< klmath inline=true >}}k_1{{< /klmath >}} without changing its mean:
+
+{{< klmath >}}
+k_\lambda = \log\frac{p}{q} + \lambda\left(\frac{q}{p} - 1\right).
+{{< /klmath >}}
+
+This is a control variate: a zero-mean term that can cancel part of {{< klmath inline=true >}}k_1{{< /klmath >}}'s noise. {{< klmath inline=true >}}\lambda = 0{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} is {{< klmath inline=true >}}k_3{{< /klmath >}}. Since {{< klmath inline=true >}}k_\lambda{{< /klmath >}} is unbiased, using it in both the reward and the loss gives the gradient of its expectation, KL. Here is each step. The reward term is
+
+{{< klmath >}}
+k_\lambda\,s = \log\frac{p}{q}\,s + \lambda\,\frac{q}{p}\,s - \lambda\,s.
+{{< /klmath >}}
+
+For the loss term, {{< klmath inline=true >}}\nabla \log\frac{p}{q} = s{{< /klmath >}}, {{< klmath inline=true >}}\nabla 1 = 0{{< /klmath >}}, and
+
+{{< klmath >}}
+\nabla \frac{q}{p} = q\,\nabla\frac{1}{p} = -\frac{q}{p^2}\,\nabla p = -\frac{q}{p}\,\frac{\nabla p}{p} = -\frac{q}{p}\,s,
+{{< /klmath >}}
+
+so
+
+{{< klmath >}}
+\nabla k_\lambda = s - \lambda\,\frac{q}{p}\,s.
+{{< /klmath >}}
+
+Add the two. The {{< klmath inline=true >}}\frac{q}{p}\,s{{< /klmath >}} terms cancel:
+
+{{< klmath >}}
+k_\lambda\,s + \nabla k_\lambda = \log\frac{p}{q}\,s + \cancel{\lambda\,\frac{q}{p}\,s} - \lambda\,s + s - \cancel{\lambda\,\frac{q}{p}\,s} = \Big(\log\frac{p}{q} + 1 - \lambda\Big)\,s.
+{{< /klmath >}}
+
+Since {{< klmath inline=true >}}\mathbb{E}_p[s] = 0{{< /klmath >}}, the mean is {{< klmath inline=true >}}\nabla\,\mathrm{KL}{{< /klmath >}} for every {{< klmath inline=true >}}\lambda{{< /klmath >}}. At {{< klmath inline=true >}}\lambda = 1{{< /klmath >}}, which is {{< klmath inline=true >}}k_3{{< /klmath >}}, the constant vanishes, and {{< klmath inline=true >}}k_3{{< /klmath >}} in both gives {{< klmath inline=true >}}\log\frac{p}{q}\,s{{< /klmath >}}: once again, the same number as {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward and {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss, for every sample.
+
+Using only one of {{< klmath inline=true >}}k_3{{< /klmath >}}'s two terms is a different matter. Since {{< klmath inline=true >}}\mathbb{E}_p[\frac{q}{p}\,s] = \sum_x q\,\nabla\log p = -\nabla\,\mathrm{KL}[q\,\|\,p]{{< /klmath >}}, each term alone brings in the *forward* KL:
+
+| | Expected gradient |
+| --- | --- |
+| {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward, {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss, {{< klmath inline=true >}}k_\lambda{{< /klmath >}} in both | {{< klmath inline=true >}}\nabla\,\mathrm{KL}[p\,\Vert\,q]{{< /klmath >}}, the reverse KL |
+| {{< klmath inline=true >}}k_1{{< /klmath >}} as a loss | {{< klmath inline=true >}}0{{< /klmath >}} |
+| {{< klmath inline=true >}}k_3{{< /klmath >}} as a loss | {{< klmath inline=true >}}\nabla\,\mathrm{KL}[q\,\Vert\,p]{{< /klmath >}}, the forward KL |
+| {{< klmath inline=true >}}k_3{{< /klmath >}} in the reward | {{< klmath inline=true >}}\nabla\,\mathrm{KL}[p\,\Vert\,q] - \nabla\,\mathrm{KL}[q\,\Vert\,p]{{< /klmath >}} |
+
+{{< klderiv title="Derive the last three rows" >}}
+**{{< klmath inline=true >}}k_1{{< /klmath >}} as a loss:** {{< klmath inline=true >}}\mathbb{E}[\nabla k_1] = \mathbb{E}[s] = 0{{< /klmath >}}.
+
+**{{< klmath inline=true >}}k_3{{< /klmath >}} as a loss:** {{< klmath inline=true >}}\mathbb{E}[\nabla k_3] = \mathbb{E}[s] - \mathbb{E}[\tfrac{q}{p}\,s] = 0 + \nabla\,\mathrm{KL}[q\,\|\,p]{{< /klmath >}}, using {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p] = \sum_x q\log q - \sum_x q\log p{{< /klmath >}}, so {{< klmath inline=true >}}\nabla\,\mathrm{KL}[q\,\|\,p] = -\sum_x q\,\nabla\log p{{< /klmath >}}.
+
+**{{< klmath inline=true >}}k_3{{< /klmath >}} in the reward:** the two terms add up to {{< klmath inline=true >}}\nabla\,\mathrm{KL}[p\,\|\,q]{{< /klmath >}}, so the reward term is that minus the loss term.
+{{< /klderiv >}}
+
+These results are known: Tang and Munos show that {{< klmath inline=true >}}k_3{{< /klmath >}} as a loss gives the forward KL's gradient[^tang], Liu et al. that {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss matches {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward in expectation[^rethinking], and Wang that the three correct forms agree sample by sample[^wang].
+
+## Choosing {{< klmath inline=true >}}\lambda{{< /klmath >}}
+
+Schulman's note arrives at {{< klmath inline=true >}}k_3{{< /klmath >}} through this same family. It observes that the variance-minimizing {{< klmath inline=true >}}\lambda{{< /klmath >}} "depends on p and q and is hard to calculate analytically", and takes {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} instead, because then the estimate can never be negative[^schulman].
+
+What if we did want to choose {{< klmath inline=true >}}\lambda{{< /klmath >}}? As an estimate of the value, {{< klmath inline=true >}}k_\lambda{{< /klmath >}}'s variance is a quadratic in {{< klmath inline=true >}}\lambda{{< /klmath >}}, smallest at
+
+{{< klmath >}}
+\lambda_\text{value} = -\frac{\operatorname{Cov}_p\!\left(\log\frac{p}{q},\ \frac{q}{p}\right)}{\operatorname{Var}_p\!\left(\frac{q}{p}\right)}.
+{{< /klmath >}}
+
+But in training we never use the value. We use the gradient {{< klmath inline=true >}}\big(\log\frac{p}{q} + 1 - \lambda\big)s{{< /klmath >}}, and there {{< klmath inline=true >}}\lambda{{< /klmath >}} plays a different role: it only shifts the reward {{< klmath inline=true >}}\log\frac{p}{q}{{< /klmath >}} by a constant. It is a *baseline*, the standard tool for reducing a policy gradient's variance, and has nothing to do with the control variate it was in the estimate. The gradient's variance, the trace of its covariance, is smallest at
+
+{{< klmath >}}
+\lambda_\text{gradient} = 1 + \frac{\mathbb{E}_p\!\left[\log\frac{p}{q}\,\|s\|^2\right]}{\mathbb{E}_p\!\left[\|s\|^2\right]},
+{{< /klmath >}}
+
+which is close to {{< klmath inline=true >}}1 + \mathrm{KL}{{< /klmath >}} when {{< klmath inline=true >}}\|s\|^2{{< /klmath >}} varies little: subtract the mean reward, as usual.
+
+For the Gaussians, {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}} with the gradient taken with respect to {{< klmath inline=true >}}\mu{{< /klmath >}}, both have closed forms. Write {{< klmath inline=true >}}g_\lambda = \big(\log\frac{p}{q} + 1 - \lambda\big)s{{< /klmath >}} for the gradient. In terms of {{< klmath inline=true >}}\mathrm{KL} = \mu^2/2{{< /klmath >}},
 
 {{< klmath >}}
 \begin{aligned}
-&\mathbb{E}_p[\nabla\log p] = 0,\\
-&\mathbb{E}_p\!\left[\tfrac{q}{p}\,\nabla\log p\right] = -\nabla\,\mathrm{KL}[q\,\|\,p],\\
-&\nabla k_1 = \nabla\log p, \qquad \nabla k_3 = \left(1-\tfrac{q}{p}\right)\nabla\log p.
+\operatorname{Var}(k_\lambda) &= 2\,\mathrm{KL}\,(1 - 2\lambda) + \lambda^2\left(e^{2\,\mathrm{KL}} - 1\right),\\
+\operatorname{Var}(g_\lambda) &= \left(\mathrm{KL} + 1 - \lambda\right)^2 + 4\,\mathrm{KL},
 \end{aligned}
 {{< /klmath >}}
 
-{{< klderiv title="Derive the three facts" >}}
-**The score has mean zero.** {{< klmath inline=true >}}\mathbb{E}_p[\nabla\log p] = \sum_x p\,\frac{\nabla p}{p} = \nabla \sum_x p = \nabla 1 = 0.{{< /klmath >}}
-
-**The ratio turns {{< klmath inline=true >}}p{{< /klmath >}} into {{< klmath inline=true >}}q{{< /klmath >}}.** {{< klmath inline=true >}}\mathbb{E}_p[\tfrac{q}{p}\nabla\log p] = \sum_x q\,\nabla\log p{{< /klmath >}}. The forward KL is {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p] = \sum_x q\log q - \sum_x q\log p{{< /klmath >}}, and only the second sum depends on {{< klmath inline=true >}}\theta{{< /klmath >}}, so {{< klmath inline=true >}}\nabla\,\mathrm{KL}[q\,\|\,p] = -\sum_x q\,\nabla\log p{{< /klmath >}}.
-
-**Gradients at a fixed sample.** With {{< klmath inline=true >}}x{{< /klmath >}} fixed, {{< klmath inline=true >}}\log q(x){{< /klmath >}} does not depend on {{< klmath inline=true >}}\theta{{< /klmath >}}, so {{< klmath inline=true >}}\nabla k_1 = \nabla\log p{{< /klmath >}}. For the ratio, {{< klmath inline=true >}}\nabla(q/p) = -(q/p)\,\nabla\log p{{< /klmath >}}, so {{< klmath inline=true >}}\nabla k_3 = \nabla\log p - (q/p)\,\nabla\log p{{< /klmath >}}.
-{{< /klderiv >}}
-
-Plug them in:
-
-| | In the reward | As a loss |
-| --- | --- | --- |
-| {{< klmath inline=true >}}k_1{{< /klmath >}} | {{< klmath inline=true >}}\nabla\,\mathrm{KL}[p\,\Vert\,q]{{< /klmath >}} (reverse) | {{< klmath inline=true >}}0{{< /klmath >}} |
-| {{< klmath inline=true >}}k_3{{< /klmath >}} | {{< klmath inline=true >}}\nabla\,\mathrm{KL}[p\,\Vert\,q] - \nabla\,\mathrm{KL}[q\,\Vert\,p]{{< /klmath >}} | {{< klmath inline=true >}}\nabla\,\mathrm{KL}[q\,\Vert\,p]{{< /klmath >}} (forward) |
-
-{{< klderiv title="Derive the table" >}}
-**{{< klmath inline=true >}}k_1{{< /klmath >}} as a loss:** {{< klmath inline=true >}}\mathbb{E}[\nabla k_1] = \mathbb{E}[\nabla\log p] = 0{{< /klmath >}}.
-
-**{{< klmath inline=true >}}k_1{{< /klmath >}} in the reward:** {{< klmath inline=true >}}\mathbb{E}_p[k_1] = \mathrm{KL}[p\,\|\,q]{{< /klmath >}}, so the split gives {{< klmath inline=true >}}\nabla\,\mathrm{KL}[p\,\|\,q] = \mathbb{E}[k_1\nabla\log p] + \mathbb{E}[\nabla k_1] = \mathbb{E}[k_1\nabla\log p] + 0{{< /klmath >}}.
-
-**{{< klmath inline=true >}}k_3{{< /klmath >}} as a loss:** {{< klmath inline=true >}}\mathbb{E}[\nabla k_3] = \mathbb{E}[\nabla\log p] - \mathbb{E}[\tfrac{q}{p}\nabla\log p] = 0 + \nabla\,\mathrm{KL}[q\,\|\,p]{{< /klmath >}}.
-
-**{{< klmath inline=true >}}k_3{{< /klmath >}} in the reward:** {{< klmath inline=true >}}\mathbb{E}[k_3\nabla\log p] = \mathbb{E}[k_1\nabla\log p] + \mathbb{E}[\tfrac{q}{p}\nabla\log p] - \mathbb{E}[\nabla\log p] = \nabla\,\mathrm{KL}[p\,\|\,q] - \nabla\,\mathrm{KL}[q\,\|\,p]{{< /klmath >}}.
-
-As a check, the two {{< klmath inline=true >}}k_3{{< /klmath >}} cells add up to {{< klmath inline=true >}}\nabla\,\mathrm{KL}[p\,\|\,q]{{< /klmath >}}, as the split requires.
-{{< /klderiv >}}
-
-Only one cell is the gradient we asked for.
-
-The {{< klmath inline=true >}}k_3{{< /klmath >}}-in-reward cell subtracts two gradients. Near {{< klmath inline=true >}}q{{< /klmath >}}, the reverse and forward KL agree to second order, so the difference nearly cancels: the penalty has almost no restoring force. Far from {{< klmath inline=true >}}q{{< /klmath >}}, what is left can point anywhere.
-
-{{< klderiv title="Why the two KLs agree near q" >}}
-Write {{< klmath inline=true >}}p = q\,(1+\varepsilon){{< /klmath >}}, with {{< klmath inline=true >}}\sum_x q\,\varepsilon = 0{{< /klmath >}} so that {{< klmath inline=true >}}p{{< /klmath >}} sums to 1. To second order in {{< klmath inline=true >}}\varepsilon{{< /klmath >}}:
+so they are smallest at
 
 {{< klmath >}}
-\begin{aligned}
-\mathrm{KL}[p\,\|\,q] &= \textstyle\sum_x q\,(1+\varepsilon)\log(1+\varepsilon) \approx \sum_x q\left(\varepsilon + \tfrac{\varepsilon^2}{2}\right) = \tfrac12\sum_x q\,\varepsilon^2,\\
-\mathrm{KL}[q\,\|\,p] &= \textstyle -\sum_x q\log(1+\varepsilon) \approx \sum_x q\left(-\varepsilon + \tfrac{\varepsilon^2}{2}\right) = \tfrac12\sum_x q\,\varepsilon^2.
-\end{aligned}
+\lambda_\text{value} = \frac{2\,\mathrm{KL}}{e^{2\,\mathrm{KL}} - 1}
+\qquad\text{and}\qquad
+\lambda_\text{gradient} = 1 + \mathrm{KL}.
 {{< /klmath >}}
 
-They first differ at third order in {{< klmath inline=true >}}\varepsilon{{< /klmath >}}.
+{{< klderiv title="Derive the two variances" >}}
+Write {{< klmath inline=true >}}x = \mu + z{{< /klmath >}} with {{< klmath inline=true >}}z \sim \mathcal{N}(0, 1){{< /klmath >}}. Then {{< klmath inline=true >}}\log\frac{p}{q} = \frac{\mu^2}{2} + \mu z{{< /klmath >}}, {{< klmath inline=true >}}\frac{q}{p} = e^{-\mu z - \mu^2/2}{{< /klmath >}}, and {{< klmath inline=true >}}s = z{{< /klmath >}}.
+
+**The estimate.** {{< klmath inline=true >}}\operatorname{Var}(\log\frac{p}{q}) = \mu^2{{< /klmath >}}. From {{< klmath inline=true >}}\mathbb{E}[e^{-2\mu z}] = e^{2\mu^2}{{< /klmath >}}, {{< klmath inline=true >}}\operatorname{Var}(\frac{q}{p}) = e^{\mu^2} - 1{{< /klmath >}}. From {{< klmath inline=true >}}\mathbb{E}[z\,e^{-\mu z}] = -\mu\,e^{\mu^2/2}{{< /klmath >}}, {{< klmath inline=true >}}\operatorname{Cov}(\log\frac{p}{q}, \frac{q}{p}) = -\mu^2{{< /klmath >}}. So {{< klmath inline=true >}}\operatorname{Var}(k_\lambda) = \mu^2 - 2\lambda\mu^2 + \lambda^2(e^{\mu^2} - 1){{< /klmath >}}, a quadratic in {{< klmath inline=true >}}\lambda{{< /klmath >}} with its minimum at {{< klmath inline=true >}}\mu^2 / (e^{\mu^2} - 1){{< /klmath >}}.
+
+**The gradient.** Let {{< klmath inline=true >}}a = \frac{\mu^2}{2} + 1 - \lambda{{< /klmath >}}, so the gradient is {{< klmath inline=true >}}(a + \mu z)\,z{{< /klmath >}}. Its mean is {{< klmath inline=true >}}\mu{{< /klmath >}}, the gradient of {{< klmath inline=true >}}\mu^2/2{{< /klmath >}}. Since {{< klmath inline=true >}}\mathbb{E}[z^2] = 1{{< /klmath >}}, {{< klmath inline=true >}}\mathbb{E}[z^3] = 0{{< /klmath >}} and {{< klmath inline=true >}}\mathbb{E}[z^4] = 3{{< /klmath >}}, its second moment is {{< klmath inline=true >}}a^2 + 3\mu^2{{< /klmath >}}, and its variance is {{< klmath inline=true >}}a^2 + 2\mu^2{{< /klmath >}}, smallest at {{< klmath inline=true >}}a = 0{{< /klmath >}}.
 {{< /klderiv >}}
 
-The {{< klmath inline=true >}}k_3{{< /klmath >}}-as-loss cell is a real gradient, just of the forward KL. Near {{< klmath inline=true >}}q{{< /klmath >}}, that barely matters. Far from {{< klmath inline=true >}}q{{< /klmath >}}, the two directions can prefer very different policies.
+The two optima move in opposite directions. As {{< klmath inline=true >}}p{{< /klmath >}} moves away from {{< klmath inline=true >}}q{{< /klmath >}}, the best estimate slides from {{< klmath inline=true >}}k_3{{< /klmath >}} toward {{< klmath inline=true >}}k_1{{< /klmath >}}, while the best gradient wants a larger and larger baseline. Move the slider to see it.
 
-## Three small worlds
-
-Each toy compares the three methods: {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward, {{< klmath inline=true >}}k_3{{< /klmath >}} in the reward, and {{< klmath inline=true >}}k_3{{< /klmath >}} as a loss. The first two figures have three plots each:
-
-1. the variance of the KL estimate, along a family of policies;
-2. the variance of one sample's gradient, which is what a minibatch averages;
-3. the true reverse KL during minibatch gradient descent, as the median of 2,000 runs, with the middle half shaded.
-
-Hover over any plot to see the distributions.
-
-### Gaussian: {{< klmath inline=true >}}k_3{{< /klmath >}} in the reward has no signal
-
-Let {{< klmath inline=true >}}p_\mu = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}. Learn {{< klmath inline=true >}}\mu{{< /klmath >}} from {{< klmath inline=true >}}\mu_0 = 1.5{{< /klmath >}}.
-
-{{< klfigure type="gaussianToy" data="klviz/toys.json" subtitle=`$p_\mu = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$ · start $\mu_0 = 1.5$ · batch 16 · learning rate 0.1` >}}
-First: variance of {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} as KL estimates. Second: per-sample variance of the gradient with respect to {{< klmath inline=true >}}\mu{{< /klmath >}}. Third: true KL during minibatch gradient descent.
+{{< klfigure type="gaussianLambda" subtitle=`$p = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$ · $k_\lambda = k_1 + \lambda\,(q/p - 1)$` >}}
+Diamonds mark each minimum. Near {{< klmath inline=true >}}q{{< /klmath >}}, both minima sit at {{< klmath inline=true >}}\lambda = 1{{< /klmath >}}, which is {{< klmath inline=true >}}k_3{{< /klmath >}}. Far from {{< klmath inline=true >}}q{{< /klmath >}}, they are on opposite sides of it.
 {{< /klfigure >}}
 
-Here the two directions have the same gradient: {{< klmath inline=true >}}\nabla\,\mathrm{KL}[p\,\|\,q] = \nabla\,\mathrm{KL}[q\,\|\,p] = \mu{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} in the reward gets exactly zero, at every {{< klmath inline=true >}}\mu{{< /klmath >}}. The policy receives only noise and wanders.
+### A toy: descending KL with each {{< klmath inline=true >}}\lambda{{< /klmath >}}
 
-{{< klderiv title="Why both gradients equal μ" >}}
-For Gaussians with equal variance, both directions give the same KL:
+Does the difference matter in training? Take a softmax policy over 1,000 actions and a fixed reference {{< klmath inline=true >}}q{{< /klmath >}}, start the policy far from {{< klmath inline=true >}}q{{< /klmath >}} ({{< klmath inline=true >}}\mathrm{KL} = 2.43{{< /klmath >}}), and minimize {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} alone by plain SGD on the logits. Each step samples 16 actions and averages {{< klmath inline=true >}}\big(\log\frac{p}{q} + 1 - \lambda\big)s{{< /klmath >}}, with {{< klmath inline=true >}}\lambda{{< /klmath >}} set three ways: {{< klmath inline=true >}}\lambda = 1{{< /klmath >}}; {{< klmath inline=true >}}\lambda_\text{value}{{< /klmath >}}; and {{< klmath inline=true >}}\lambda_\text{gradient}{{< /klmath >}}, both computed exactly from the current policy. Every choice gives an unbiased gradient, so any difference comes from variance.
 
-{{< klmath >}}
-\mathrm{KL}[\mathcal{N}(\mu,1)\,\|\,\mathcal{N}(0,1)] = \mathrm{KL}[\mathcal{N}(0,1)\,\|\,\mathcal{N}(\mu,1)] = \frac{\mu^2}{2}.
-{{< /klmath >}}
-
-Both have derivative {{< klmath inline=true >}}\mu{{< /klmath >}}, so their difference, the {{< klmath inline=true >}}k_3{{< /klmath >}}-in-reward gradient, is zero.
-{{< /klderiv >}}
-
-{{< klmath inline=true >}}k_3{{< /klmath >}} as a loss is correct on average. But its gradient starts out 15 times noisier than {{< klmath inline=true >}}k_1{{< /klmath >}}'s (87 versus 5.8), even though {{< klmath inline=true >}}k_3{{< /klmath >}} is only about 3 times noisier as a KL estimate. The {{< klmath inline=true >}}q/p{{< /klmath >}} in {{< klmath inline=true >}}\nabla k_3{{< /klmath >}} brings the tail back. With batches of 16, the median run keeps pace; the noise shows up as a wider spread.
-
-### Two actions: {{< klmath inline=true >}}k_3{{< /klmath >}} in the reward pushes the wrong way
-
-Let {{< klmath inline=true >}}p_\theta = (a, 1-a){{< /klmath >}} with {{< klmath inline=true >}}a = \sigma(\theta){{< /klmath >}}, and {{< klmath inline=true >}}q = (0.5, 0.5){{< /klmath >}}. Learn the logit {{< klmath inline=true >}}\theta{{< /klmath >}} from {{< klmath inline=true >}}a_0 = 0.05{{< /klmath >}}, so the first action is a hole.
-
-{{< klfigure type="categoricalToy" data="klviz/toys.json" subtitle=`$p_\theta = (a, 1-a)$ · $a = \sigma(\theta)$ · $q = (0.5, 0.5)$ · start $a_0 = 0.05$ · batch 16 · learning rate 1` >}}
-First: variance of {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} as KL estimates. Second: per-sample variance of the gradient with respect to the logit {{< klmath inline=true >}}\theta{{< /klmath >}}; both are zero at {{< klmath inline=true >}}a = 0.5{{< /klmath >}}, where {{< klmath inline=true >}}p = q{{< /klmath >}}. Third: true KL during minibatch gradient descent.
+{{< klfigure type="lambdaDescent" data="klviz/lambda.json" subtitle=`1,000 actions · 16 samples per step · 32 seeds · median and interquartile range` >}}
+Training curves use learning rate 5. KL and gradient variance are exact at each step. A policy that collapses onto a single action stops moving, because its score is zero.
 {{< /klfigure >}}
 
-Now the forward KL has gradient {{< klmath inline=true >}}a - \tfrac12{{< /klmath >}}, which differs from the reverse KL's. The {{< klmath inline=true >}}k_3{{< /klmath >}}-in-reward gradient, their difference, has the wrong sign for every {{< klmath inline=true >}}a \neq \tfrac12{{< /klmath >}}. The KL climbs toward its maximum, {{< klmath inline=true >}}\log 2{{< /klmath >}}, as the rare action disappears.
+At learning rate 5, the estimate's best {{< klmath inline=true >}}\lambda{{< /klmath >}} trains the slowest: median KL 0.47 after 400 steps, against 0.32 for the other two, with five to ten times their gradient variance. Here {{< klmath inline=true >}}\lambda_\text{value}{{< /klmath >}} stays near 0. A few actions where {{< klmath inline=true >}}p{{< /klmath >}} is tiny but {{< klmath inline=true >}}q{{< /klmath >}} is not make {{< klmath inline=true >}}\frac{q}{p}{{< /klmath >}} heavy-tailed, so the estimate barely uses its control variate. Across learning rates, the three agree when steps are small. As steps grow, {{< klmath inline=true >}}\lambda_\text{value}{{< /klmath >}} fails first, collapsing onto a single action at learning rate 10. {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} collapses at 20, and {{< klmath inline=true >}}\lambda_\text{gradient}{{< /klmath >}} still converges there. Estimating {{< klmath inline=true >}}\lambda_\text{gradient}{{< /klmath >}} from each batch instead of exactly, as a practical method would, gives nearly the same results (`tools/kl-lambda-study.py` runs both). This is one toy problem, but the direction is what the formulas predict: a good estimate and a good gradient ask for different {{< klmath inline=true >}}\lambda{{< /klmath >}}, and training needs the gradient.
 
-{{< klderiv title="Derive the two gradients" >}}
-With {{< klmath inline=true >}}\mathrm{d}a/\mathrm{d}\theta = a(1-a){{< /klmath >}}:
+## Examples
 
-{{< klmath >}}
-\begin{aligned}
-\mathrm{KL}[p\,\|\,q] &= a\log 2a + (1-a)\log 2(1-a),\\
-\tfrac{\mathrm{d}}{\mathrm{d}\theta}\mathrm{KL}[p\,\|\,q] &= a(1-a)\log\tfrac{a}{1-a},\\[4pt]
-\mathrm{KL}[q\,\|\,p] &= -\log 2 - \tfrac12\log a - \tfrac12\log(1-a),\\
-\tfrac{\mathrm{d}}{\mathrm{d}\theta}\mathrm{KL}[q\,\|\,p] &= a - \tfrac12.
-\end{aligned}
-{{< /klmath >}}
-
-At {{< klmath inline=true >}}a = 0.05{{< /klmath >}} the {{< klmath inline=true >}}k_3{{< /klmath >}}-in-reward gradient is {{< klmath inline=true >}}-0.14 - (-0.45) = +0.31{{< /klmath >}}. Gradient descent then lowers {{< klmath inline=true >}}\theta{{< /klmath >}}, and with it {{< klmath inline=true >}}a{{< /klmath >}}: away from {{< klmath inline=true >}}q{{< /klmath >}}.
-{{< /klderiv >}}
-
-The intuition is simple. At the start, {{< klmath inline=true >}}k_3{{< /klmath >}} charges the rare action a penalty of 6.7 and the common one 0.17. As a reward, that discourages the rare action even more. {{< klmath inline=true >}}k_1{{< /klmath >}} charges the rare action {{< klmath inline=true >}}\log(0.05/0.5) < 0{{< /klmath >}}: a bonus, so it recovers.
-
-{{< klmath inline=true >}}k_3{{< /klmath >}} as a loss converges, and faster than {{< klmath inline=true >}}k_1{{< /klmath >}}. It follows the forward KL, which is large when {{< klmath inline=true >}}p{{< /klmath >}} has a hole, so it pushes harder. Both KLs are minimized at {{< klmath inline=true >}}p = q{{< /klmath >}}, so here only the path differs.
-
-### Two modes: {{< klmath inline=true >}}k_3{{< /klmath >}} as a loss fits the forward KL
-
-The first two worlds hide the real cost of {{< klmath inline=true >}}k_3{{< /klmath >}} as a loss. In both, {{< klmath inline=true >}}p{{< /klmath >}} can match {{< klmath inline=true >}}q{{< /klmath >}} exactly, and both KLs are zero there. Take that option away.
-
-Let {{< klmath inline=true >}}q{{< /klmath >}} have two modes, {{< klmath inline=true >}}q = \tfrac12\mathcal{N}(-2, 0.5^2) + \tfrac12\mathcal{N}(2, 0.5^2){{< /klmath >}}, and let the policy be a single Gaussian, {{< klmath inline=true >}}p = \mathcal{N}(\mu, \sigma^2){{< /klmath >}}. Learn {{< klmath inline=true >}}\mu{{< /klmath >}} and {{< klmath inline=true >}}\log\sigma{{< /klmath >}} from {{< klmath inline=true >}}\mu_0 = 1{{< /klmath >}}, {{< klmath inline=true >}}\sigma_0 = 1{{< /klmath >}}.
-
-The two KLs now want different things:
-
-- The reverse KL, {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}}, is **mode-seeking**. It punishes {{< klmath inline=true >}}p{{< /klmath >}} for putting mass where {{< klmath inline=true >}}q{{< /klmath >}} has none. Its best fit sits on one mode, at {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] \approx \log 2 \approx 0.69{{< /klmath >}}.
-- The forward KL, {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p]{{< /klmath >}}, is **mass-covering**. It punishes {{< klmath inline=true >}}p{{< /klmath >}} for missing anything {{< klmath inline=true >}}q{{< /klmath >}} does. Its best fit matches {{< klmath inline=true >}}q{{< /klmath >}}'s mean and variance, {{< klmath inline=true >}}\mathcal{N}(0, 4.25){{< /klmath >}}, and is centered on the gap between the modes.
-
-{{< klderiv title="Derive the two best fits" >}}
-**Forward KL.** {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p] = \text{const} - \mathbb{E}_q[\log p]{{< /klmath >}}, and for {{< klmath inline=true >}}p = \mathcal{N}(\mu, \sigma^2){{< /klmath >}},
+**DeepSeek-V3.2.** The original GRPO adds {{< klmath inline=true >}}k_3{{< /klmath >}} to its loss for every token, with {{< klmath inline=true >}}p = \pi_\theta{{< /klmath >}} and {{< klmath inline=true >}}q = \pi_\mathrm{ref}{{< /klmath >}}[^grpo]. Autodiff keeps only the loss term, so by the table it follows the forward KL. DeepSeek-V3.2 multiplies the term by the importance ratio {{< klmath inline=true >}}r = \pi_\theta/\pi_\mathrm{old}{{< /klmath >}} to make the gradient unbiased, citing the "unbounded" weights the original gives tokens with {{< klmath inline=true >}}\pi_\theta \ll \pi_\mathrm{ref}{{< /klmath >}}[^deepseek]. The fix works, and the product rule shows why. Since {{< klmath inline=true >}}\nabla r = r\,s{{< /klmath >}},
 
 {{< klmath >}}
--\mathbb{E}_q[\log p] = \tfrac12\log(2\pi\sigma^2) + \frac{\mathbb{E}_q[(x-\mu)^2]}{2\sigma^2}.
+\nabla_\theta\!\left(r\,k_3\right) = r\Big(\underbrace{k_3\,s}_{\text{reward term}} + \underbrace{\nabla k_3}_{\text{loss term}}\Big) = r\,\log\frac{p}{q}\,s.
 {{< /klmath >}}
 
-This is minimized at {{< klmath inline=true >}}\mu = \mathbb{E}_q[x] = 0{{< /klmath >}} and {{< klmath inline=true >}}\sigma^2 = \operatorname{Var}_q(x) = 0.5^2 + 2^2 = 4.25{{< /klmath >}}.
+The ratio supplies the missing reward term, and the unbounded weight is the {{< klmath inline=true >}}\frac{q}{p}\,s{{< /klmath >}} that it cancels. On the first optimizer step, where {{< klmath inline=true >}}r = 1{{< /klmath >}}, this is exactly {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss. On later steps over the same batch, it is {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss weighted by the detached ratio, which keeps it unbiased off-policy. Either way, the extra machinery recovers a gradient that {{< klmath inline=true >}}k_2{{< /klmath >}} gives directly.
 
-**Reverse KL.** Take {{< klmath inline=true >}}p = \mathcal{N}(2, 0.5^2){{< /klmath >}}, one of the modes. Where {{< klmath inline=true >}}p{{< /klmath >}} has mass, the other mode is negligible, so {{< klmath inline=true >}}q \approx p/2{{< /klmath >}}, {{< klmath inline=true >}}\log(p/q) \approx \log 2{{< /klmath >}}, and {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] \approx \log 2{{< /klmath >}}.
-{{< /klderiv >}}
-
-{{< klfigure type="bimodalToy" data="klviz/toys.json" subtitle=`$q = \tfrac12\mathcal{N}(-2, 0.5^2) + \tfrac12\mathcal{N}(2, 0.5^2)$ · $p = \mathcal{N}(\mu, \sigma^2)$ · start $\mu_0 = 1, \sigma_0 = 1$ · batch 64 · learning rate 0.05` >}}
-First: {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}}, the objective we want to minimize. Second: {{< klmath inline=true >}}\mathrm{KL}[q\,\|\,p]{{< /klmath >}}. Both show the median of 1,000 runs, with the middle half shaded; runs that diverge count as infinite KL. Third: the median run's policy after 300 steps, against {{< klmath inline=true >}}q{{< /klmath >}} (gray, dashed).
-{{< /klfigure >}}
-
-{{< klmath inline=true >}}k_1{{< /klmath >}} in the reward finds a mode ({{< klmath inline=true >}}\mu \approx 2{{< /klmath >}}, {{< klmath inline=true >}}\sigma \approx 0.5{{< /klmath >}}) and reaches {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] \approx 0.69{{< /klmath >}}.
-
-{{< klmath inline=true >}}k_3{{< /klmath >}} as a loss lands on {{< klmath inline=true >}}\mu \approx 0{{< /klmath >}}, {{< klmath inline=true >}}\sigma \approx 2.06{{< /klmath >}}: the best fit of the forward KL. Its reverse KL is 2.10, three times worse. It puts 37% of its samples in {{< klmath inline=true >}}|x| < 1{{< /klmath >}}, where {{< klmath inline=true >}}q{{< /klmath >}} puts 2.3%.
-
-{{< klmath inline=true >}}k_3{{< /klmath >}} in the reward also finds a mode in the median run, but 26% of its runs diverge within 300 steps. That is the {{< klmath inline=true >}}q/p{{< /klmath >}} tail again.
-
-{{< klcode title="Reproduce the three toys" >}}
+{{< klcode title="Check the DeepSeek-V3.2 gradient numerically" >}}
 import numpy as np
 
-METHODS = ['k1_reward', 'k3_reward', 'k3_loss']
+rng = np.random.default_rng(1)
+size = 5
+softmax = lambda z: np.exp(z) / np.exp(z).sum()
+old = rng.normal(size=size)                  # logits of pi_old
+theta = old + 0.3 * rng.normal(size=size)    # pi_theta, a few steps later
+ref = rng.dirichlet(np.ones(size))           # pi_ref
 
 
-def per_sample(log_ratio, score):
-    """Per-sample KL estimates and gradient estimates, given log p/q and score."""
-    k1 = log_ratio
-    k3 = log_ratio + np.expm1(-log_ratio)
-    gradients = {
-        'k1_reward': k1 * score,                 # k1 as a detached reward
-        'k3_reward': k3 * score,                 # k3 as a detached reward
-        'k3_loss': -np.expm1(-log_ratio) * score,  # d k3 / d theta, sample fixed
-    }
-    return k1, k3, gradients
+def kl_term(logits, x):
+    """DeepSeek-V3.2's per-token KL term: (pi_theta / pi_old) * k3."""
+    p, p_old = softmax(logits), softmax(old)
+    ratio = ref[x] / p[x]
+    return p[x] / p_old[x] * (ratio - np.log(ratio) - 1)
 
 
-# Gaussian: p = N(mu, 1), q = N(0, 1), learn mu.
-def gaussian_samples(mu, eps):
-    x = mu + eps
-    return mu * x - mu**2 / 2, x - mu   # log p/q, d log p / d mu
-
-
-def gaussian_kl(mu):
-    return mu**2 / 2
-
-
-# Two actions: p = (a, 1 - a), a = sigmoid(theta), q = (0.5, 0.5), learn theta.
-def categorical_outcomes(a):
-    p = np.array([a, 1 - a])
-    return p, np.log(p / .5), np.array([1 - a, -a])   # probabilities, log p/q, score
-
-
-def categorical_kl(theta):
-    # Stable in the logit: log a = -log(1 + e^-theta), log(1 - a) = -log(1 + e^theta).
-    log_a, log_b = -np.logaddexp(0, -theta), -np.logaddexp(0, theta)
-    return np.exp(log_a) * (log_a - np.log(.5)) + np.exp(log_b) * (log_b - np.log(.5))
-
-
-def variances(family, value):
-    """Exact variances under p (Gauss-Hermite quadrature or a sum over actions)."""
-    if family == 'gaussian':
-        eps, w = np.polynomial.hermite_e.hermegauss(160)
-        w = w / w.sum()
-        k1, k3, g = per_sample(*gaussian_samples(value, eps))
-    else:
-        w, log_ratio, score = categorical_outcomes(value)
-        k1, k3, g = per_sample(log_ratio, score)
-    var = lambda v: w @ (v - w @ v)**2
-    return dict(k1=var(k1), k3=var(k3), **{m: var(g[m]) for m in METHODS})
-
-
-def descend(family, start, rate, steps, batch=16, seeds=2000, seed=0):
-    """Minibatch gradient descent from mu (Gaussian) or a (two actions).
-
-    Returns, for each method, the true KL and the policy (mu or a) of every
-    run at every step.
-    """
-    rng = np.random.default_rng(seed)
-    if family == 'categorical':
-        start = np.log(start / (1 - start))   # update the logit theta
-    kls, policies = {}, {}
-    for method in METHODS:
-        theta = np.full(seeds, start, dtype=float)
-        history, policy = [], []
-        for step in range(steps + 1):
-            if family == 'gaussian':
-                history.append(gaussian_kl(theta))
-                policy.append(theta)
-                log_ratio, score = gaussian_samples(theta[:, None], rng.normal(size=(seeds, batch)))
-            else:
-                history.append(categorical_kl(theta))
-                log_a, log_b = -np.logaddexp(0, -theta), -np.logaddexp(0, theta)
-                policy.append(np.exp(log_a))
-                a = np.exp(log_a)[:, None]
-                first = rng.random((seeds, batch)) < a   # sampled action 1?
-                log_ratio = np.where(first, log_a[:, None], log_b[:, None]) - np.log(.5)
-                score = np.where(first, 1 - a, -a)
-            gradient = per_sample(log_ratio, score)[2][method].mean(axis=1)
-            theta = theta - rate * gradient
-        kls[method], policies[method] = np.array(history), np.array(policy)
-    return kls, policies
-
-
-# Two modes: q = mixture of N(-2, 0.5^2) and N(2, 0.5^2); p = N(mu, sigma^2).
-# Learn mu and log sigma. p has one mode, so it cannot match q.
-def log_normal(x, mean, sd):
-    return -0.5 * ((x - mean) / sd)**2 - np.log(sd) - 0.5 * np.log(2 * np.pi)
-
-
-def log_q(x):
-    return np.logaddexp(log_normal(x, -2, .5), log_normal(x, 2, .5)) + np.log(.5)
-
-
-def bimodal_kls(mu, sigma):
-    """Both KL directions by numerical integration on a grid."""
-    x = np.linspace(-12, 12, 4001)
-    dx, lq = x[1] - x[0], log_q(x)
-    lp = log_normal(x, mu[:, None], sigma[:, None])
-    reverse = (np.exp(lp) * (lp - lq)).sum(axis=1) * dx   # KL[p || q]
-    forward = (np.exp(lq) * (lq - lp)).sum(axis=1) * dx   # KL[q || p]
-    return reverse, forward
-
-
-def bimodal_descend(rate=.05, steps=300, batch=64, seeds=1000, every=2, seed=0):
-    rng = np.random.default_rng(seed)
-    results = {}
-    for method in METHODS:
-        mu, log_sigma = np.full(seeds, 1.0), np.zeros(seeds)
-        diverged = np.zeros(seeds, dtype=bool)
-        history = []
-        for step in range(steps + 1):
-            if step % every == 0:
-                reverse, forward = bimodal_kls(mu, np.exp(log_sigma))
-                history.append((mu.copy(), np.exp(log_sigma), np.where(diverged, np.inf, reverse),
-                                np.where(diverged, np.inf, forward), diverged.mean()))
-            if step == steps:
-                break
-            sigma = np.exp(log_sigma)[:, None]
-            eps = rng.normal(size=(seeds, batch))
-            x = mu[:, None] + sigma * eps
-            log_ratio = log_normal(x, mu[:, None], sigma) - log_q(x)
-            score_mu, score_log_sigma = eps / sigma, eps**2 - 1
-            with np.errstate(over='ignore', invalid='ignore'):
-                g = per_sample(log_ratio, score_mu)[2][method].mean(axis=1)
-                h = per_sample(log_ratio, score_log_sigma)[2][method].mean(axis=1)
-                mu, log_sigma = mu - rate * g, log_sigma - rate * h
-            # Freeze runs that leave a sane range; they count as infinite KL.
-            diverged |= ~np.isfinite(mu) | ~np.isfinite(log_sigma) | (np.abs(mu) > 100) | (np.abs(log_sigma) > 5)
-            mu, log_sigma = np.where(diverged, 1.0, mu), np.where(diverged, 0.0, log_sigma)
-        results[method] = history
-    return results
-
-
-# Gaussian and two actions: variances at the start, and median KL after 20 steps.
-print(variances('gaussian', 1.5))
-print(variances('categorical', 0.05))
-for family, start, rate in [('gaussian', 1.5, 0.1), ('categorical', 0.05, 1.0)]:
-    kls, policies = descend(family, start, rate, steps=20)
-    print(family, {m: np.median(k[-1]) for m, k in kls.items()})
-
-# Two modes: the median run of each method after 300 steps.
-for method, history in bimodal_descend().items():
-    mu, sigma, reverse, forward, diverged = history[-1]
-    middle = np.argsort(reverse)[len(reverse) // 2]
-    print(method, 'mu', mu[middle], 'sigma', sigma[middle],
-          'KL[p||q]', reverse[middle], 'KL[q||p]', forward[middle], 'diverged', diverged)
+for x in range(size):
+    h = 1e-6
+    numeric = np.array([(kl_term(theta + h * e, x) - kl_term(theta - h * e, x)) / (2 * h)
+                        for e in np.eye(size)])
+    p = softmax(theta)
+    score = np.eye(size)[x] - p
+    k1 = np.log(p[x] / ref[x])
+    predicted = p[x] / softmax(old)[x] * k1 * score   # r * k1 * score
+    assert np.allclose(numeric, predicted, atol=1e-7)
+print('gradient of r * k3 = r * k1 * score at every token')
 {{< /klcode >}}
 
-## What this means for OPD
+**Composer 2.** Cursor chooses {{< klmath inline=true >}}k_1{{< /klmath >}} over {{< klmath inline=true >}}k_3{{< /klmath >}} because the variance of the {{< klmath inline=true >}}k_3{{< /klmath >}} estimate "increases drastically" as the distributions diverge, and rules out {{< klmath inline=true >}}k_2{{< /klmath >}} because it is biased[^cursor]. Both reasons are about the estimate. Neither reaches the gradient: {{< klmath inline=true >}}k_3{{< /klmath >}} in both terms has exactly {{< klmath inline=true >}}k_1{{< /klmath >}}'s gradient, and {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss has exactly the right gradient despite its bias. The report does not say how {{< klmath inline=true >}}k_1{{< /klmath >}} enters training. In the reward, it gives exactly the right gradient. As a loss alone, its gradient is zero on average.
 
-In on-policy distillation, the student samples a response and the teacher scores every token. The per-token reward is
+**GRPO and verl.** GRPO's original {{< klmath inline=true >}}k_3{{< /klmath >}} loss, which is also verl's default KL loss[^verl], cites Schulman's note, whose case for {{< klmath inline=true >}}k_3{{< /klmath >}} is its quality as an estimate. As a loss alone, it follows the forward KL. Near the reference the two directions nearly agree, so as a light leash this is mostly harmless. It is not what the estimator's reputation promises.
 
-{{< klmath >}}
--k_1 = \log \pi_\mathrm{teacher}(x_t \mid x_{<t}) - \log \pi_\mathrm{student}(x_t \mid x_{<t}).
-{{< /klmath >}}
-
-By the table, this gives exactly the gradient of the reverse KL, {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}. Reverse KL is mode-seeking, which is what we want from a smaller student that cannot do everything the teacher does: commit to what it can do well.
-
-Swapping {{< klmath inline=true >}}k_3{{< /klmath >}} into that reward does not make sense. Even where {{< klmath inline=true >}}k_3{{< /klmath >}} estimates the KL better, its gradient is the difference of the reverse and forward KL gradients.
-
-Using {{< klmath inline=true >}}k_3{{< /klmath >}} as a loss can work. It just minimizes the forward KL, {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{teacher}\,\|\,\pi_\mathrm{student}]{{< /klmath >}}. The student then spreads over teacher behaviors it cannot represent, including the gaps between them.
-
-What about GRPO, which puts {{< klmath inline=true >}}k_3{{< /klmath >}} in its loss to keep the policy near a reference?[^grpo] That is a different regime. As a leash, the KL is meant to stay small, and near the reference the two directions agree to second order. Distillation is the opposite: the student starts far from the teacher and may never reach it. That is where the direction matters. The difference between estimating KL and differentiating it is analyzed in more depth in *Rethinking KL Regularization in RLHF*.[^rethinking]
+**On-policy distillation.** Thinking Machines puts {{< klmath inline=true >}}-k_1{{< /klmath >}} in the reward[^opd]. The loss term it drops has mean zero, so this is the reverse KL's gradient, the right direction for a smaller student: mode-seeking, committing to what it can do well.
 
 ## Epilogue
 
 A KL estimator has two jobs in RL.
 
-**Measuring.** Neither estimator always wins. {{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance near {{< klmath inline=true >}}q{{< /klmath >}}; {{< klmath inline=true >}}k_1{{< /klmath >}} is safer far from {{< klmath inline=true >}}q{{< /klmath >}} and around holes.
+**Measuring.** Neither estimator always wins. {{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance near {{< klmath inline=true >}}q{{< /klmath >}}; {{< klmath inline=true >}}k_1{{< /klmath >}} is safer far from {{< klmath inline=true >}}q{{< /klmath >}}; {{< klmath inline=true >}}k_2{{< /klmath >}} is biased.
 
-**Training.** Pick the estimator whose gradient is the one you want. For the reverse KL, that is {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward.
+**Training.** The estimator does not matter. {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward, {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss, and {{< klmath inline=true >}}k_3{{< /klmath >}} in both give the same gradient for every sample. What matters is keeping the right terms, and, if you tune anything, tuning the baseline for the gradient rather than the control variate for the estimate.
 
-{{< klmath inline=true >}}k_3{{< /klmath >}} adds a zero-mean term, {{< klmath inline=true >}}q/p - 1{{< /klmath >}}. Zero mean keeps the estimate unbiased. It does not keep the gradient unchanged: multiplied by the score, the term picks up the forward KL's gradient, and differentiated, it becomes that gradient.
-
-**Choose a KL estimator for the gradient it produces, not the number it reports.**
+**Choose a KL estimator for the number it reports, and a baseline for the gradient it produces.**
 
 [^schulman]: John Schulman, ["Approximating KL Divergence"](https://joschu.net/blog/kl-approx.html), 2020.
 [^deepseek]: DeepSeek-AI, ["DeepSeek-V3.2"](https://arxiv.org/html/2512.02556v1#S3.SS1), 2025.
 [^opd]: Thinking Machines Lab, ["On-Policy Distillation"](https://thinkingmachines.ai/blog/on-policy-distillation/), 2025.
+[^cursor]: Cursor Research, ["Composer 2 Technical Report"](https://arxiv.org/abs/2603.24477), 2026, Section 4.1.
 [^grpo]: Zhihong Shao et al., ["DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models"](https://arxiv.org/abs/2402.03300), 2024. GRPO adds {{< klmath inline=true >}}k_3{{< /klmath >}} with the reference policy directly to its loss.
-[^rethinking]: ["Rethinking KL Regularization in RLHF"](https://arxiv.org/abs/2510.01555), 2025.
+[^verl]: verl, [`kl_penalty_forward` in `core_algos.py`](https://github.com/volcengine/verl/blob/main/verl/trainer/ppo/core_algos.py); `kl_loss_type` defaults to `low_var_kl`, which is {{< klmath inline=true >}}k_3{{< /klmath >}}.
+[^tang]: Yunhao Tang and Rémi Munos, ["On a few pitfalls in KL divergence gradient estimation for RL"](https://arxiv.org/abs/2506.09477), 2025.
+[^rethinking]: Kezhao Liu et al., ["Rethinking KL Regularization in RLHF: From Value Estimation to Gradient Optimization"](https://arxiv.org/abs/2510.01555), 2025.
+[^wang]: Xihuai Wang, ["Choosing KL Estimators in RL: From Value Unbiasedness to Gradient Correctness"](https://xihuai18.github.io/reinforcement-learning/2025/12/01/kl-estimators-en.html), 2025.

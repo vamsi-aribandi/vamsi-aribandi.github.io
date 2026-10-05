@@ -140,3 +140,12 @@
 .kl-bimodal-values > div { grid-template-columns:minmax(0,1fr) 54px 54px; gap:7px; }
 .kl-deriv-body { border-top: 1px solid var(--kl-line); padding: 4px 18px 6px; font-size: .92em; }
 .kl-deriv-body .kl-math[data-display="true"] { overflow-x: auto; overflow-y: hidden; }
+
+.kl-mark { fill: var(--series); stroke: var(--kl-bg); stroke-width: 1.5; }
+.kl-mark-drop { stroke: var(--series); stroke-width: 1; stroke-dasharray: 2 3; opacity: .7; }
+.kl-legend i.diamond { width: 9px; height: 9px; border: 0; background: var(--series); transform: rotate(45deg); margin: 0 3px; }
+.kl-lambda-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; margin-bottom: 8px; }
+.kl-lambda-side { flex: 1 1 260px; min-width: 0; }
+.kl-lambda-side .kl-controls { margin-top: 8px; }
+.kl-lambda-densities { flex: 0 1 270px; font-size: 13px; }
+.kl-lambda-readouts { grid-template-columns: 1fr 1fr 1fr; }

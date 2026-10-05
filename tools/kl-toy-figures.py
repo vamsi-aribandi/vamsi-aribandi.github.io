@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Data for the three optimization toy figures in the KL estimation post.
+"""Data for the toy figures in the KL estimation post.
 
+For random categorical pairs, compares how well k3 estimates KL with how well
+its gradients estimate the gradient of the reverse KL, both relative to k1.
 For a Gaussian and a two-action policy, computes (1) the variance of the KL
 estimates k1 and k3, (2) the per-sample variance of three gradient estimates,
 and (3) true KL during minibatch gradient descent with each gradient estimate.
@@ -25,6 +27,13 @@ def per_sample(log_ratio, score):
         'k3_reward': k3 * score,                 # k3 as a detached reward
         'k3_loss': -np.expm1(-log_ratio) * score,  # d k3 / d theta, sample fixed
     }
+    # Both halves of the k3 gradient together equal k1 in the reward, sample by sample.
+    # (The tolerance allows for rounding where the two halves are huge and cancel.)
+    with np.errstate(invalid='ignore', over='ignore'):
+        halves = np.abs(gradients['k3_reward']) + np.abs(gradients['k3_loss'])
+        error = np.abs(gradients['k3_reward'] + gradients['k3_loss'] - gradients['k1_reward'])
+        finite = np.isfinite(halves)
+        assert np.all(error[finite] <= 1e-9 * halves[finite] + 1e-12)
     return k1, k3, gradients
 
 
@@ -145,6 +154,38 @@ def bimodal_descend(rate=.05, steps=300, batch=64, seeds=1000, every=2, seed=0):
     return results
 
 
+def random_pairs(count=40000, batch=16, bins=np.logspace(-4, .25, 18), seed=0):
+    """Random categorical pairs: mean squared error of a batch-average KL
+    estimate, and of a batch-average gradient with respect to the logits of p,
+    each relative to k1. k1 is unbiased for both, so its error is variance / batch.
+    """
+    rng = np.random.default_rng(seed)
+    rows = []
+    for _ in range(count):
+        size = rng.integers(2, 11)
+        q = rng.dirichlet(np.ones(size))
+        logits = np.log(q) + np.exp(rng.uniform(np.log(.005), np.log(2))) * rng.normal(size=size)
+        p = np.exp(logits - logits.max()); p /= p.sum()
+        log_ratio, score = np.log(p / q), np.eye(size) - p   # row x: d log p(x) / d logits
+        k1, k3, g = per_sample(log_ratio[:, None], score)   # one row per outcome x
+        k1, k3 = k1.ravel(), k3.ravel()
+        kl = p @ k1
+        true = p @ (k1[:, None] * score)
+        def mse(v, target):
+            mean = p @ v
+            return ((mean - target)**2).sum() + (p @ ((v - mean)**2).reshape(size, -1)).sum() / batch
+        base = mse(g['k1_reward'], true)
+        rows.append([kl, mse(k3, kl) / mse(k1, kl), mse(g['k3_loss'], true) / base])
+    rows = np.array(rows)
+    out = dict(count=count, batch=batch, bins=[])
+    for lo, hi in zip(bins[:-1], bins[1:]):
+        r = rows[(rows[:, 0] >= lo) & (rows[:, 0] < hi)]
+        quart = lambda c: [float(v) for v in np.quantile(r[:, c], [.25, .5, .75])]
+        out['bins'].append(dict(x=float(np.sqrt(lo * hi)), lower=float(lo), upper=float(hi), count=len(r),
+                                estimate=quart(1), k3_loss=quart(2)))
+    return out
+
+
 def figure(family, grid, start, rate, steps):
     kl = gaussian_kl if family == 'gaussian' else lambda a: categorical_kl(np.log(a / (1 - a)))
     rows = [dict(x=float(v), kl=float(kl(v)), **{k: float(x) for k, x in variances(family, v).items()}) for v in grid]
@@ -178,12 +219,16 @@ def bimodal_figure(rate=.05, steps=300, batch=64, seeds=1000, every=2):
 
 if __name__ == '__main__':
     data = dict(
+        pairs=random_pairs(),
         bimodal=bimodal_figure(),
         gaussian=figure('gaussian', np.linspace(.01, 2, 200), start=1.5, rate=.1, steps=60),
         categorical=figure('categorical', np.linspace(.02, .98, 193), start=.05, rate=1., steps=60),
     )
     out = Path(__file__).resolve().parent.parent / 'static/klviz/toys.json'
     out.write_text(json.dumps(data, separators=(',', ':')))
+    for b in data['pairs']['bins']:
+        print('pairs KL %.4g n=%d  median ratio: estimate %.3g  k3 loss %.3g' % (
+            b['x'], b['count'], b['estimate'][1], b['k3_loss'][1]))
     for name in ['gaussian', 'categorical']:
         print(name, 'final median KL', {m: round(data[name]['training'][m]['median'][-1], 4) for m in METHODS})
     for m, t in data['bimodal']['training'].items():
