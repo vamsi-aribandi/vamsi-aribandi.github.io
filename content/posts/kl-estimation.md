@@ -135,7 +135,7 @@ In RL, the KL estimate is not the end product. We differentiate it. The gradient
 \end{aligned}
 {{< /klmath >}}
 
-The first sum becomes an expectation through {{< klmath inline=true >}}\nabla p = p\,\nabla\log p{{< /klmath >}}.
+Note that for the second line, we made use of the log derivative trick {{< klmath inline=true >}}\nabla p = p\,\nabla\log p{{< /klmath >}}.
 
 We can drop the second term, {{< klmath inline=true >}}\mathbb{E}_p[\nabla\log p]{{< /klmath >}}, as its expectation is zero{{< klhint >}}Probabilities always sum to one, so their changes sum to zero: {{< klmath inline=true >}}\displaystyle\mathbb{E}_p[\nabla\log p] = \sum_x p\,\frac{\nabla p}{p} = \sum_x \nabla p = \nabla \sum_x p = \nabla 1 = 0.{{< /klmath >}}{{< /klhint >}}:
 
@@ -145,7 +145,9 @@ We can drop the second term, {{< klmath inline=true >}}\mathbb{E}_p[\nabla\log p
 
 This tidies up the math, but there is more going on. {{< klmath inline=true >}}\mathbb{E}_p[\nabla\log p]{{< /klmath >}} is zero, i.e. *in expectation* it won't change the gradient. In other words, {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} plays the same role for the gradient that {{< klmath inline=true >}}\frac{q}{p} - 1{{< /klmath >}} plays for the estimate: a control variate with mean zero, which can be kept in any amount without changing the expectation.
 
-### {{< klmath inline=true >}}\lambda=1{{< /klmath >}}: {{< klmath inline=true >}}\nabla\,\mathrm{KL} \equiv k_1{{< /klmath >}} in the reward {{< klmath inline=true >}}\equiv k_2{{< /klmath >}} as a loss
+### {{< klmath inline=true >}}\nabla\,\mathrm{KL} \equiv k_1{{< /klmath >}} in the reward {{< klmath inline=true >}}\equiv k_2{{< /klmath >}} as a loss
+
+The most common implementations of minimizing KL use one of two mechanisms: adding {{< klmath inline=true >}}k_1{{< /klmath >}} to the reward, or {{< klmath inline=true >}}k_2{{< /klmath >}} as a surrogate loss.
 
 {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward yields the correct gradient. In policy gradient, a sample {{< klmath inline=true >}}x{{< /klmath >}} with a fixed reward {{< klmath inline=true >}}R(x){{< /klmath >}} contributes {{< klmath inline=true >}}R(x)\,\nabla\log p(x){{< /klmath >}}. Notice that directly setting {{< klmath inline=true >}}R(x){{< /klmath >}} as {{< klmath inline=true >}}k_1{{< /klmath >}} yields the correct gradient:
 
@@ -165,31 +167,20 @@ Similarly, using {{< klmath inline=true >}}k_2{{< /klmath >}} directly as a loss
 \end{aligned}
 {{< /klmath >}}
 
-Note that this is *not* the gradient of its expectation {{< klmath inline=true >}}\nabla\mathbb{E}_p[k_2]{{< /klmath >}}.
-
-Both {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward and {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss keep none of the {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} term.
-
 ### From control variate to baseline
 
-Now return to the family {{< klmath inline=true >}}k_\lambda = k_1 + \lambda\left(\frac{q}{p} - 1\right){{< /klmath >}} from the estimation section, where {{< klmath inline=true >}}\lambda{{< /klmath >}} sets the magnitude of the estimate's control variate. Since {{< klmath inline=true >}}k_\lambda{{< /klmath >}} is unbiased, we can differentiate its expectation the same way we differentiated KL:
+Now return to the family {{< klmath inline=true >}}k_\lambda = k_1 + \lambda\left(\frac{q}{p} - 1\right){{< /klmath >}} from the estimation section, where {{< klmath inline=true >}}\lambda{{< /klmath >}} sets the magnitude of the estimate's control variate. Since {{< klmath inline=true >}}k_\lambda{{< /klmath >}} is unbiased, we should be able to show that the gradient of its expectation is the same as the gradient of KL:
 
 {{< klmath >}}
 \begin{aligned}
 \nabla\mathbb{E}_p[k_\lambda] &= \nabla \sum_x p\,k_\lambda = \sum_x \nabla p\,k_\lambda + \sum_x p\,\nabla k_\lambda\\
-&= \mathbb{E}_p\!\left[k_\lambda\,\nabla\log p + \nabla k_\lambda\right].
+&= \mathbb{E}_p\!\left[k_\lambda\,\nabla\log p + \nabla k_\lambda\right]\\
+&= \mathbb{E}_p\Big[\Big(\log\frac{p}{q} + \cancel{\lambda\,\frac{q}{p}} - \lambda\Big)\nabla\log p + \Big(1 - \cancel{\lambda\,\frac{q}{p}}\Big)\nabla\log p\Big]\\
+&= \mathbb{E}_p\Big[\log\frac{p}{q}\,\nabla\log p + (1 - \lambda)\,\nabla\log p\Big].
 \end{aligned}
 {{< /klmath >}}
 
-Since {{< klmath inline=true >}}\nabla \log\frac{p}{q} = \nabla\log p{{< /klmath >}} and {{< klmath inline=true >}}\nabla\frac{q}{p} = -\frac{q}{p}\,\nabla\log p{{< /klmath >}}{{< klhint label="how?" >}}{{< klmath inline=true >}}\displaystyle\nabla \frac{q}{p} = q\,\nabla\frac{1}{p} = -\frac{q}{p^2}\,\nabla p = -\frac{q}{p}\,\frac{\nabla p}{p} = -\frac{q}{p}\,\nabla\log p.{{< /klmath >}}{{< /klhint >}}, every term is a multiple of {{< klmath inline=true >}}\nabla\log p{{< /klmath >}}, and the {{< klmath inline=true >}}\frac{q}{p}{{< /klmath >}} terms cancel:
-
-{{< klmath >}}
-\begin{aligned}
-k_\lambda\,\nabla\log p + \nabla k_\lambda &= \Big(\log\frac{p}{q} + \cancel{\lambda\,\frac{q}{p}} - \lambda\Big)\nabla\log p + \Big(1 - \cancel{\lambda\,\frac{q}{p}}\Big)\nabla\log p\\
-&= \log\frac{p}{q}\,\nabla\log p + (1 - \lambda)\,\nabla\log p.
-\end{aligned}
-{{< /klmath >}}
-
-The second term can be canceled, as {{< klmath inline=true >}}\mathbb{E}_p[ (1 - \lambda)\,\nabla\log p] = 0{{< /klmath >}}{{< klhint >}}Probabilities always sum to one, so their changes sum to zero: {{< klmath inline=true >}}\displaystyle\mathbb{E}_p[\nabla\log p] = \sum_x p\,\frac{\nabla p}{p} = \sum_x \nabla p = \nabla \sum_x p = \nabla 1 = 0.{{< /klmath >}}{{< /klhint >}}. Therefore, it is a control variate:
+The second term can be canceled, as {{< klmath inline=true >}}\mathbb{E}_p[ (1 - \lambda)\,\nabla\log p] = 0{{< /klmath >}}{{< klhint >}}Probabilities always sum to one, so their changes sum to zero: {{< klmath inline=true >}}\displaystyle\mathbb{E}_p[\nabla\log p] = \sum_x p\,\frac{\nabla p}{p} = \sum_x \nabla p = \nabla \sum_x p = \nabla 1 = 0.{{< /klmath >}}{{< /klhint >}}:
 
 {{< klmath >}}
 \begin{aligned}
@@ -199,20 +190,21 @@ The second term can be canceled, as {{< klmath inline=true >}}\mathbb{E}_p[ (1 -
 \end{aligned}
 {{< /klmath >}}
 
-Notice that the control variate in {{< klmath inline=true >}}k_\lambda{{< /klmath >}} is {{< klmath inline=true >}}\lambda\left(\frac{q}{p} - 1\right){{< /klmath >}}, but in the {{< klmath inline=true >}}\nabla\mathbb{E}_p[k_\lambda]{{< /klmath >}} it is {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}}. This suggests that choosing {{< klmath inline=true >}}\lambda{{< /klmath >}} to minimize the variance of KL might not minimize the variance of its gradient.
-{{< klmath inline=true >}}k_1{{< /klmath >}} ({{< klmath inline=true >}}\lambda = 0{{< /klmath >}}) keeps all of the {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} term, the same gradient as differentiating KL directly, and {{< klmath inline=true >}}k_3{{< /klmath >}} ({{< klmath inline=true >}}\lambda = 1{{< /klmath >}}) keeps none of it, the same gradient as {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward and {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss.
+Notice that again, we've found a zero-mean term {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}} that does not bias the expectation when added, i.e. a control variate. In {{< klmath inline=true >}}k_\lambda{{< /klmath >}} it is {{< klmath inline=true >}}\lambda\left(\frac{q}{p} - 1\right){{< /klmath >}}, but in the {{< klmath inline=true >}}\nabla\mathbb{E}_p[k_\lambda]{{< /klmath >}} it is {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}}. This suggests that choosing {{< klmath inline=true >}}\lambda{{< /klmath >}} to minimize the variance of KL might not minimize the variance of its gradient.
 
-## The best estimate is not the best gradient
+{{< klmath inline=true >}}\nabla\mathbb{E}_p[k_1]{{< /klmath >}} ({{< klmath inline=true >}}\lambda=0{{< /klmath >}}) keeps all of the {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} term in the gradient, and is the exact same sample gradient as differentiating KL directly. Similarly, {{< klmath inline=true >}}\nabla\mathbb{E}_p[k_3]{{< /klmath >}} ({{< klmath inline=true >}}\lambda=1{{< /klmath >}}) keeps none of it, and is the exact same sample gradient as setting {{< klmath inline=true >}}k_1{{< /klmath >}} as the reward or {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss. All of these are correct and unbiased gradients of KL, they just have different variances as a result of adding different magnitudes of the control variate.
 
-Schulman's note arrives at {{< klmath inline=true >}}k_3{{< /klmath >}} through this same family. It observes that the variance-minimizing {{< klmath inline=true >}}\lambda{{< /klmath >}} "depends on p and q and is hard to calculate analytically", and takes {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} instead, because then the estimate can never be negative[^schulman].
+## The best estimate does not yield the best gradient
 
-What if we did want to choose {{< klmath inline=true >}}\lambda{{< /klmath >}}? As an estimate of the value, {{< klmath inline=true >}}k_\lambda{{< /klmath >}}'s variance is a quadratic in {{< klmath inline=true >}}\lambda{{< /klmath >}}, smallest at
+Schulman's note[^schulman] says that the variance minimizing value of {{< klmath inline=true >}}\lambda{{< /klmath >}} depends on {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}} and is hard to calculate analytically, and uses {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} instead, because then the estimate can never be negative.
+
+What if we did want to choose {{< klmath inline=true >}}\lambda{{< /klmath >}}? To minimize the variance of the estimate of KL, {{< klmath inline=true >}}k_\lambda{{< /klmath >}}'s variance is a quadratic in {{< klmath inline=true >}}\lambda{{< /klmath >}}, smallest at
 
 {{< klmath >}}
 \lambda_\text{value} = -\frac{\operatorname{Cov}_p\!\left(\log\frac{p}{q},\ \frac{q}{p}\right)}{\operatorname{Var}_p\!\left(\frac{q}{p}\right)}.
 {{< /klmath >}}
 
-But in training we usually don't use the value of KL. We use its gradient {{< klmath inline=true >}}\big(\log\frac{p}{q} + 1 - \lambda\big)\nabla\log p{{< /klmath >}}, and there {{< klmath inline=true >}}\lambda{{< /klmath >}} sets the size of a different control variate {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}}.
+However, in training we usually don't use the value of KL. We use its gradient. We've shown that  {{< klmath inline=true >}}\mathbb{E}_p[k_\lambda] = \big(\log\frac{p}{q} + 1 - \lambda\big)\nabla\log p{{< /klmath >}}, where {{< klmath inline=true >}}\lambda{{< /klmath >}} sets the size of a different control variate {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}}.
 In policy-gradient language, it shifts the reward {{< klmath inline=true >}}\log\frac{p}{q}{{< /klmath >}} by a *baseline*, the standard tool for reducing a policy gradient's variance. The variance of this gradient is smallest at
 
 {{< klmath >}}
