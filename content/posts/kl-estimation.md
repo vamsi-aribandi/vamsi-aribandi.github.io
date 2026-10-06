@@ -1,5 +1,5 @@
 ---
-title: "The best estimate of KL ≢ the best estimate of ∇KL"
+title: "The best estimate of KL ≢ the best estimate its gradient"
 date: 2026-10-02
 draft: false
 toc: false
@@ -29,55 +29,99 @@ We can use these functions to estimate KL, but how should we use them to *minimi
 
 ## Estimating the value of KL
 
-Before trying to minimize KL, let's compare the estimators on two Gaussians, {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}. Here, {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} is exactly {{< klmath inline=true >}}\mu^2/2{{< /klmath >}}.
+Before trying to minimize KL, let's compare the estimators on two Gaussians, {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}. Here, {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} is exactly {{< klmath inline=true >}}\mu^2/2{{< /klmath >}}{{< klhint >}}The two Gaussian densities have the same normalizing constant, so {{< klmath inline=true >}}\displaystyle\log\frac{p(x)}{q(x)} = -\frac{(x-\mu)^2}{2} + \frac{x^2}{2} = \mu x - \frac{\mu^2}{2}{{< /klmath >}}. Taking the expectation under {{< klmath inline=true >}}p{{< /klmath >}}, where {{< klmath inline=true >}}\mathbb{E}_p[x] = \mu{{< /klmath >}}, gives {{< klmath inline=true >}}\displaystyle\mathrm{KL}[p\,\|\,q] = \mu\mathbb{E}_p[x] - \frac{\mu^2}{2} = \frac{\mu^2}{2}{{< /klmath >}}.{{< /klhint >}}.
 
-Let's first examine bias. {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} have an expected value of KL itself, so they are unbiased. {{< klmath inline=true >}}k_2{{< /klmath >}} overestimates, and the gap grows with the KL:
+Let's first examine bias. An estimator is unbiased when its expectation equals the true KL.
+
+{{< klmath inline=true >}}k_1{{< /klmath >}} is unbiased by the definition of KL:
+
+{{< klmath >}}
+\mathbb{E}_p[k_1] = \mathbb{E}_p\!\left[\log\frac{p}{q}\right] = \mathrm{KL}[p\,\|\,q].
+{{< /klmath >}}
+
+{{< klmath inline=true >}}k_2{{< /klmath >}} is biased. For these Gaussians,
+
+{{< klmath >}}
+\mathbb{E}_p[k_2] = \frac12\mathbb{E}_p\!\left[\left(\mu x - \frac{\mu^2}{2}\right)^2\right] = \frac{\mu^2}{2} + \frac{\mu^4}{8} = \mathrm{KL}[p\,\|\,q] + \frac{\mu^4}{8}.
+{{< /klmath >}}
+
+{{< klmath inline=true >}}k_3{{< /klmath >}} adds a zero-mean term to {{< klmath inline=true >}}k_1{{< /klmath >}}, so it stays unbiased:
+
+{{< klmath >}}
+\begin{aligned}
+&\mathbb{E}_p\!\left[\frac{q}{p} - 1\right] = \int p(x)\frac{q(x)}{p(x)}\,dx - 1 = 0,\\
+\Longrightarrow\quad &\mathbb{E}_p[k_3] = \mathbb{E}_p[k_1] + \underbrace{\mathbb{E}_p\!\left[\frac{q}{p} - 1\right]}_{0} = \mathrm{KL}[p\,\|\,q].
+\end{aligned}
+{{< /klmath >}}
 
 {{< klfigure type="gaussianBias" subtitle=`$p = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$` >}}
-Expected value of each estimator. {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} lie on the true KL; {{< klmath inline=true >}}k_2{{< /klmath >}} has expectation {{< klmath inline=true >}}\mathrm{KL} + \mathrm{KL}^2/2{{< /klmath >}}. Hover to see {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}}.
+Expected value of each estimator. Hover to see {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}}.
 {{< /klfigure >}}
 
-Second, variance. {{< klmath inline=true >}}k_3{{< /klmath >}} adds one term to {{< klmath inline=true >}}k_1{{< /klmath >}}:
+As the graph shows, {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} are unbiased, while {{< klmath inline=true >}}k_2{{< /klmath >}} overestimates KL. The key to {{< klmath inline=true >}}k_3{{< /klmath >}} staying unbiased is that its added term, {{< klmath inline=true >}}q/p - 1{{< /klmath >}}, is zero *in expectation*. It can be nonzero for an individual sample, but it does not change the estimator's mean.
 
-{{< klmath >}}
-k_3 = k_1 + \left(\frac{q}{p} - 1\right).
-{{< /klmath >}}
-
-Notice that {{< klmath inline=true >}}\mathbb{E}_p[(q/p)-1] = \sum_x p(x)\,\frac{q(x)}{p(x)} - 1 = \sum_x q(x) - 1 = 0{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} plus a *control variate* -- it makes an estimator better when it cancels noise, and worse when it adds noise.
-
-Nothing forces the control variate to enter with weight one. Since it has mean zero, any multiple of it keeps the estimate unbiased, which gives a family of estimators
-
-{{< klmath >}}
-k_\lambda = k_1 + \lambda\left(\frac{q}{p} - 1\right),
-{{< /klmath >}}
-
-where {{< klmath inline=true >}}\lambda{{< /klmath >}} sets the magnitude of the control variate: {{< klmath inline=true >}}\lambda = 0{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} is {{< klmath inline=true >}}k_3{{< /klmath >}}. We will come back to choosing {{< klmath inline=true >}}\lambda{{< /klmath >}}. At {{< klmath inline=true >}}\lambda = 1{{< /klmath >}}, the control variate lowers the variance at small KL and raises it sharply at large KL:
+This zero-mean term is a *control variate*: we add it to an estimator to adjust its variance without changing its expectation. It can cancel noise and decrease variance, or add noise and increase variance. For these Gaussians, {{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance near {{< klmath inline=true >}}q{{< /klmath >}} and higher variance farther away:
 
 {{< klfigure type="gaussian" subtitle=`$p = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$` >}}
 Variance of each estimator, logarithmic scale. Hover to see {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}}.
 {{< /klfigure >}}
 
-{{< klcode title="Gaussian example" >}}
-import numpy as np
+{{< klderiv title="How the control variate changes variance" >}}
+Write {{< klmath inline=true >}}c = q/p - 1{{< /klmath >}}, so {{< klmath inline=true >}}k_3 = k_1 + c{{< /klmath >}}. The variance of their sum separates into the original noise, the added noise, and their covariance:
 
-rng = np.random.default_rng(0)
+{{< klmath >}}
+\operatorname{Var}_p(k_3) = \operatorname{Var}_p(k_1) + \operatorname{Var}_p(c) + 2\operatorname{Cov}_p(k_1,c).
+{{< /klmath >}}
 
-# p = N(mu, 1), q = N(0, 1), so KL[p || q] = mu^2 / 2.
-eps = rng.normal(size=1_000_000)
-for mu in [0.5, 1.0, 1.5, 2.0]:
-    x = mu + eps                      # samples from p
-    log_ratio = mu * x - mu**2 / 2    # log p(x) - log q(x)
-    k1 = log_ratio
-    k2 = log_ratio**2 / 2
-    k3 = log_ratio + np.expm1(-log_ratio)
-    kl = mu**2 / 2
-    # Exact: E[k2] = kl + kl^2 / 2; Var(k1) = 2 kl, Var(k2) = 2 kl^2 + 2 kl^3,
-    # Var(k3) = exp(2 kl) - 1 - 2 kl.
-    print(f'KL {kl:.3f}  means {k1.mean():.3f} {k2.mean():.3f} {k3.mean():.3f}  '
-          f'variances {k1.var():.3f} {k2.var():.3f} {k3.var():.3f}')
-{{< /klcode >}}
+For the Gaussians, write a sample as {{< klmath inline=true >}}x = \mu + z{{< /klmath >}}, where {{< klmath inline=true >}}z \sim \mathcal{N}(0,1){{< /klmath >}}. Substituting into the log ratio derived above gives
 
-So as an estimate, the answer depends on how far {{< klmath inline=true >}}p{{< /klmath >}} is from {{< klmath inline=true >}}q{{< /klmath >}}. If all you want is to log the KL, {{< klmath inline=true >}}k_3{{< /klmath >}} is the best choice near {{< klmath inline=true >}}q{{< /klmath >}} and {{< klmath inline=true >}}k_1{{< /klmath >}} far from it.
+{{< klmath >}}
+\begin{aligned}
+k_1 &= \mu x - \frac{\mu^2}{2} = \frac{\mu^2}{2} + \mu z,\\
+c &= e^{-\mu^2/2 - \mu z} - 1.
+\end{aligned}
+{{< /klmath >}}
+
+Since {{< klmath inline=true >}}\mathbb{E}[z] = 0{{< /klmath >}} and {{< klmath inline=true >}}\operatorname{Var}(z) = 1{{< /klmath >}}, {{< klmath inline=true >}}\operatorname{Var}_p(k_1) = \mu^2{{< /klmath >}}. The Gaussian identity {{< klmath inline=true >}}\mathbb{E}[e^{tz}] = e^{t^2/2}{{< /klmath >}} gives the added term's variance:
+
+{{< klmath >}}
+\operatorname{Var}_p(c) = \mathbb{E}_p[c^2] = e^{-\mu^2}\mathbb{E}[e^{-2\mu z}] - 1 = e^{\mu^2} - 1.
+{{< /klmath >}}
+
+Its covariance with {{< klmath inline=true >}}k_1{{< /klmath >}} is negative. Using {{< klmath inline=true >}}\mathbb{E}[z e^{tz}] = t e^{t^2/2}{{< /klmath >}},
+
+{{< klmath >}}
+\operatorname{Cov}_p(k_1,c) = \mathbb{E}[\mu z\,c] = \mu e^{-\mu^2/2}\mathbb{E}[z e^{-\mu z}] = -\mu^2.
+{{< /klmath >}}
+
+Putting these together,
+
+{{< klmath >}}
+\operatorname{Var}_p(k_3) = \underbrace{\mu^2}_{\text{original noise}} + \underbrace{(e^{\mu^2} - 1)}_{\text{added noise}} \underbrace{-\,2\mu^2}_{\text{cancellation}} = e^{\mu^2} - 1 - \mu^2.
+{{< /klmath >}}
+
+For completeness, {{< klmath inline=true >}}k_2 = \frac12(\mu^2/2 + \mu z)^2{{< /klmath >}}. Using {{< klmath inline=true >}}\mathbb{E}[z^3] = 0{{< /klmath >}} and {{< klmath inline=true >}}\mathbb{E}[z^4] = 3{{< /klmath >}} gives
+
+{{< klmath >}}
+\operatorname{Var}_p(k_2) = \frac{\mu^4}{2} + \frac{\mu^6}{4}.
+{{< /klmath >}}
+
+If we weight the control variate by {{< klmath inline=true >}}\lambda{{< /klmath >}}, the cancellation scales linearly while the added variance scales quadratically:
+
+{{< klmath >}}
+\operatorname{Var}_p(k_1 + \lambda c) = \mu^2 - 2\lambda\mu^2 + \lambda^2(e^{\mu^2} - 1).
+{{< /klmath >}}
+{{< /klderiv >}}
+
+Because the control variate is zero-mean, any multiple of it can be added without bising the estimator, yielding the family of estimators:
+
+{{< klmath >}}
+k_\lambda = \log\frac{p(x)}{q(x)} + \lambda\left(\frac{q}{p} - 1\right).
+{{< /klmath >}}
+
+Here, {{< klmath inline=true >}}\lambda = 0{{< /klmath >}} gives {{< klmath inline=true >}}k_1{{< /klmath >}}, and {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} gives {{< klmath inline=true >}}k_3{{< /klmath >}}. We'll revisit how to choose {{< klmath inline=true >}}\lambda{{< /klmath >}}.
+
+So choosing the best estimate depends on how far {{< klmath inline=true >}}p{{< /klmath >}} is from {{< klmath inline=true >}}q{{< /klmath >}}. If all you want is to estimate KL, {{< klmath inline=true >}}k_3{{< /klmath >}} is the best choice near {{< klmath inline=true >}}q{{< /klmath >}} and {{< klmath inline=true >}}k_1{{< /klmath >}} far from it.
 
 ## The gradient of KL
 
