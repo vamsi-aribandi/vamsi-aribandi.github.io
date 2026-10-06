@@ -1,8 +1,8 @@
 ---
-title: "A Visual Guide to Parallel Transformers"
+title: "A visual guide to parallel Transformers"
 date: 2026-09-28
 toc: false
-summary: "Illustrating a transformer's forward and backward passes across different sharding strategies; and their combinations used to train frontier LLMs"
+summary: "Illustrating a Transformer's forward and backward passes across different sharding strategies; and their combinations used to train frontier LLMs"
 ---
 
 <link rel="stylesheet" href="/tpviz/tpviz.css">

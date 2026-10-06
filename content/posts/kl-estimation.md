@@ -1,15 +1,19 @@
 ---
-title: "The best estimate of KL ≢ the best gradient of KL"
+title: "The best estimate of KL ≢ the best estimate of ∇KL"
 date: 2026-10-02
 draft: false
 toc: false
 klviz: true
-summary: "k1 in the reward, k2 as a loss and k3 differentiated through its expectation give the same gradient of KL. In the gradient, the k_λ family's control variate becomes a baseline, and the λ that gives the best KL estimate is not the one that gives the best gradient."
+summary: "Even after finding an estimate of KL that produces the correct gradient, reducing the variance of the estimator doesn't necessarily translate to reducing the variance of the corresponding gradient."
 ---
 
-KL divergence {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[\log(p/q)]{{< /klmath >}} is an important quantity in AI. In reinforcement learning for language models, {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} is used as a regularizer to keep a learned policy {{< klmath inline=true >}}\pi_\theta{{< /klmath >}} near a reference policy {{< klmath inline=true >}}\pi_\mathrm{ref}{{< /klmath >}}, and on-policy distillation (OPD) lets a student policy {{< klmath inline=true >}}\pi_\mathrm{student}{{< /klmath >}} learn from a teacher policy {{< klmath inline=true >}}\pi_\mathrm{teacher}{{< /klmath >}} by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}.
+KL divergence {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[\log(p/q)]{{< /klmath >}} is an important quantity in AI.
 
-Computing KL between language models is generally intractable, because the expectation {{< klmath inline=true >}}\mathbb{E}_p{{< /klmath >}} is a sum over every possible sequence of tokens. Instead we *estimate* it from samples {{< klmath inline=true >}}x \sim p{{< /klmath >}}. Three estimators of KL are common:
+In reinforcement learning for language models, {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} is used as a regularizer to keep a learned policy {{< klmath inline=true >}}\pi_\theta{{< /klmath >}} near a reference policy {{< klmath inline=true >}}\pi_\mathrm{ref}{{< /klmath >}}, and on-policy distillation (OPD) lets a student policy {{< klmath inline=true >}}\pi_\mathrm{student}{{< /klmath >}} learn from a teacher policy {{< klmath inline=true >}}\pi_\mathrm{teacher}{{< /klmath >}} by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}.
+
+Exactly computing KL between two language models is intractable, because the expectation {{< klmath inline=true >}}\mathbb{E}_p{{< /klmath >}} is a sum over every possible sequence of tokens. Instead we *estimate* it from samples {{< klmath inline=true >}}x \sim p{{< /klmath >}}. 
+
+Three estimators of KL are common:
 
 {{< klmath >}}
 \begin{aligned}
@@ -19,15 +23,15 @@ k_3(x) &= \log\frac{p(x)}{q(x)} + \frac{q(x)}{p(x)} - 1
 \end{aligned}
 {{< /klmath >}}
 
-You might recall these estimators from a note by John Schulman[^schulman]. It shows that {{< klmath inline=true >}}k_3{{< /klmath >}} in particular is unbiased like {{< klmath inline=true >}}k_1{{< /klmath >}} and never negative like {{< klmath inline=true >}}k_2{{< /klmath >}}, with lower variance.
+You might recall these estimators from an excellent post by John Schulman[^schulman]. It shows that {{< klmath inline=true >}}k_3{{< /klmath >}} in particular is unbiased like {{< klmath inline=true >}}k_1{{< /klmath >}} and never negative like {{< klmath inline=true >}}k_2{{< /klmath >}}, with lower variance.
 
-How should reverse KL be optimized ({{< klmath inline=true >}}\min_p\mathrm{KL}[p\,\|\,q]{{< /klmath >}}), and does the best estimate of KL lead to the best learning curve?
+We can use these functions to estimate KL, but how should we use them to *minimize* it? Let's explore how to minimize reverse KL ({{< klmath inline=true >}}\min_p\mathrm{KL}[p\,\|\,q]{{< /klmath >}}), since it is relevant for reinforcement learning.
 
 ## Estimating the value of KL
 
-Let's compare the estimators on two Gaussians, {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}. As we vary {{< klmath inline=true >}}\mu{{< /klmath >}}, {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} is {{< klmath inline=true >}}\mu^2/2{{< /klmath >}}.
+Before trying to minimize KL, let's compare the estimators on two Gaussians, {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}. Here, {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} is exactly {{< klmath inline=true >}}\mu^2/2{{< /klmath >}}.
 
-First, bias. {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} are unbiased, so their expected value is the KL itself. {{< klmath inline=true >}}k_2{{< /klmath >}} overestimates, and the gap grows with the KL:
+Let's first examine bias. {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} have an expected value of KL itself, so they are unbiased. {{< klmath inline=true >}}k_2{{< /klmath >}} overestimates, and the gap grows with the KL:
 
 {{< klfigure type="gaussianBias" subtitle=`$p = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$` >}}
 Expected value of each estimator. {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}k_3{{< /klmath >}} lie on the true KL; {{< klmath inline=true >}}k_2{{< /klmath >}} has expectation {{< klmath inline=true >}}\mathrm{KL} + \mathrm{KL}^2/2{{< /klmath >}}. Hover to see {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}}.
