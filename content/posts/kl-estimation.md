@@ -1,7 +1,7 @@
 ---
 title: "The best estimate of KL ≢ the best gradient of KL"
-date: 2026-09-30
-draft: true
+date: 2026-10-02
+draft: false
 toc: false
 klviz: true
 summary: "k1 in the reward, k2 as a loss and k3 differentiated through its expectation give the same gradient of KL. In the gradient, the k_λ family's control variate becomes a baseline, and the λ that gives the best KL estimate is not the one that gives the best gradient."
