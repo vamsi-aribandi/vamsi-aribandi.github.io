@@ -108,8 +108,8 @@
   }
   function lineChart(parent, cfg) {
     parent.replaceChildren();
-    const w = Math.max(280, parent.clientWidth), h = w < 480 ? 300 : 342;
-    const m = {l: w < 480 ? 57 : 70, r: 17, t: 16, b: 53};
+    const w = Math.max(cfg.minWidth ?? 280, parent.clientWidth), h = cfg.height ?? (w < 480 ? 300 : 342);
+    const m = {l: w < 300 ? 50 : w < 480 ? 57 : 70, r: 17, t: 16, b: 53};
     const pw = w - m.l - m.r, ph = h - m.t - m.b;
     const tx = x => cfg.logX ? Math.log10(x) : x;
     const ty = y => cfg.logY ? Math.log10(y) : y;
@@ -687,31 +687,39 @@
     draw();return draw;
   }
   function lambdaDescent(root, data) {
-    // SGD on KL[p || q] for a softmax policy, with three choices of lambda.
-    let view='kl';
+    // SGD on KL[p || q] for a softmax policy, with three choices of lambda,
+    // at a learning rate chosen with the slider.
+    const u=data.setup;let index=Math.max(0,u.rates.indexOf(10));
     const controls=el('div','kl-controls',root);
-    tabs(controls,[['kl','KL during training'],['grad_var','Gradient variance'],['lam','λ used'],['sweep','Across learning rates']],view,v=>{view=v;draw();});
-    const leg=el('div','kl-legend',root),plot=el('div','kl-plot',root);
+    const label=el('label','',controls,'Learning rate');
+    const slider=el('input','',label);
+    Object.assign(slider,{type:'range',min:0,max:u.rates.length-1,step:1,value:index});
+    const shown=el('span','',label);
+    slider.addEventListener('input',()=>{index=Number(slider.value);draw();});
+    const leg=el('div','kl-legend',root),grid=el('div','kl-gradient-grid kl-three-grid',root);
+    const panels=[
+      {key:'kl',title:'KL[p ∥ q] (nats)',logY:true,yDomain:[.1,8]},
+      {key:'grad_var',title:'Gradient variance',logY:true,yDomain:[1e-4,1]},
+      {key:'lam',title:'λ used',logY:false,yDomain:[-.25,3],yTicks:[0,1,2,3]}
+    ].map(pn=>{const cell=el('div','kl-panel',grid);el('div','kl-panel-title',cell,pn.title);return {...pn,plot:el('div','kl-plot',cell)};});
+    const out=el('div','kl-readouts kl-readouts-4',root);
     const rules=[
+      {key:'zero',label:'λ = 0 ($k_1$)',color:'var(--kl-green)'},
       {key:'one',label:'λ = 1 ($k_3$)',color:'var(--kl-purple)'},
-      {key:'value',label:'Best λ for the value',color:colors.k1},
+      {key:'value',label:'Best λ for the value',color:colors.k1,dashed:true},
       {key:'gradient',label:'Best λ for the gradient',color:colors.k3}
     ];
-    const u=data.setup;
+    legend(leg,rules);
     const draw=()=>{
-      let series,cfg;
-      if (view==='sweep') {
-        series=rules.map(r=>({...r,data:u.rates.map((x,i)=>{const v=data.sweep[r.key][i];return {x,y:v.median,lo:v.q25,hi:v.q75};})}));
-        cfg={logX:true,logY:true,xTicks:u.rates,xFormat:v=>String(v),xLabel:'Learning rate',xTip:'Learning rate',yLabel:`KL[p ∥ q] after ${u.steps} steps (nats)`,dots:true,
-          description:`Median final KL over ${u.seeds} seeds at each learning rate, with interquartile range.`};
-      } else {
-        series=rules.map(r=>{const v=data.runs[r.key][view];return {...r,data:v.median.map((y,i)=>({x:i,y,lo:v.q25[i],hi:v.q75[i]}))};});
-        const labels={kl:'KL[p ∥ q] (nats)',grad_var:'Gradient variance (trace)',lam:'λ'};
-        cfg={logY:view!=='lam',xLabel:'Step',xTip:'Step',yLabel:labels[view],dots:false,
-          description:`${labels[view]} during SGD at learning rate ${u.lr}, median over ${u.seeds} seeds with interquartile range.`};
-      }
-      legend(leg,series);
-      lineChart(plot,{series,...cfg});
+      const rate=u.rates[index],c=data.curves[String(rate)];
+      shown.textContent=String(rate);
+      panels.forEach(pn=>{
+        const [lo,hi]=pn.yDomain,clamp=v=>Math.max(lo,Math.min(hi,v));
+        const series=rules.map(r=>{const v=c[r.key][pn.key];return {...r,data:v.median.map((y,i)=>({x:i*u.every,y:clamp(y),lo:clamp(v.q25[i]),hi:clamp(v.q75[i])}))};});
+        lineChart(pn.plot,{series,minWidth:200,height:250,logY:pn.logY,yDomain:pn.yDomain,yTicks:pn.yTicks,xDomain:[0,u.steps],xTicks:[0,200,400],xLabel:'Step',xTip:'Step',yLabel:'',dots:false,
+          description:`${pn.title} during SGD at learning rate ${rate}: median over ${u.seeds} seeds with interquartile range.`});
+      });
+      readouts(out,rules.map(r=>[`Final KL · ${({zero:'λ = 0',one:'λ = 1',value:'value λ',gradient:'gradient λ'})[r.key]}`,num(c[r.key].kl.median.at(-1)),r.color]));
     };
     draw();return draw;
   }

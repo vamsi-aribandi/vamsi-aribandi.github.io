@@ -149,3 +149,14 @@
 .kl-lambda-side .kl-controls { margin-top: 8px; }
 .kl-lambda-densities { flex: 0 1 270px; font-size: 13px; }
 .kl-lambda-readouts { grid-template-columns: 1fr 1fr 1fr; }
+.kl-three-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.kl-panel-title { font-size: 12px; color: var(--kl-muted); margin: 0 0 2px 8px; }
+@media (max-width:700px) { .kl-three-grid { grid-template-columns: 1fr; } }
+.kl-hint { position: relative; display: inline; cursor: help; outline: none; }
+.kl-hint-label { font-size: .72em; vertical-align: super; color: var(--kl-orange); border-bottom: 1px dotted currentColor; margin-left: 1px; }
+.kl-hint-body { display: none; position: absolute; z-index: 30; left: 50%; top: 1.7em; transform: translateX(-50%);
+  width: max-content; max-width: min(360px, 88vw); padding: 10px 12px; border: 1px solid var(--kl-line); border-radius: 8px;
+  background: var(--kl-bg); color: var(--kl-ink); font-size: .82rem; line-height: 1.6; box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: normal; }
+.kl-hint:hover .kl-hint-body, .kl-hint:focus .kl-hint-body, .kl-hint:focus-within .kl-hint-body { display: block; }
+.kl-readouts-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width:560px) { .kl-readouts-4 { grid-template-columns: repeat(2, 1fr); } }

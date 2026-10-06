@@ -6,12 +6,14 @@ q and descends KL[p || q] with plain SGD on the logits. Each step samples a batc
 x_1..x_B ~ p and uses the full (reward + loss) gradient of
     k_lambda = log(p/q) + lambda (q/p - 1),
 which is (log(p/q) + 1 - lambda) s per sample, with s the score. Every lambda gives
-an unbiased gradient; lambda changes only its variance. Three choices of lambda:
+an unbiased gradient; lambda changes only its variance. Four choices of lambda:
+    0         k1 differentiated exactly
     1         k3, which is also k1 in the reward and k2 as a loss
     value     the lambda that minimizes the variance of the KL estimate
     gradient  the lambda that minimizes the variance of the gradient
 Both optimal lambdas are computed exactly from the current p (oracle), and also
-estimated from the batch itself (plug-in). KL and gradient variance are exact.
+estimated from the batch itself (plug-in, printed only). KL and gradient variance
+are exact. Runs at several learning rates, with the rollouts' seeds shared.
 
   pip install numpy
   python tools/kl-lambda-study.py   # writes static/klviz/lambda.json
@@ -69,7 +71,7 @@ def run(rule, log_q, theta0, steps, batch, lr, seed):
         l = log_p[x] - log_q[x]
         u = np.exp(np.minimum(-l, 700)) - 1
         s2 = 1 - 2 * p[x] + p @ p
-        lam = {'one': 1.0, 'value': lam_value, 'gradient': lam_grad}.get(rule)
+        lam = {'zero': 0.0, 'one': 1.0, 'value': lam_value, 'gradient': lam_grad}.get(rule)
         if lam is None:
             v, gr = plug_in(l, u, s2)
             lam = v if rule == 'value_plugin' else gr
@@ -84,32 +86,27 @@ def run(rule, log_q, theta0, steps, batch, lr, seed):
     return rec
 
 
-def band(runs, key):
-    a = np.array([r[key] for r in runs])
-    return dict(median=np.median(a, 0).tolist(), q25=np.quantile(a, .25, 0).tolist(), q75=np.quantile(a, .75, 0).tolist())
+def band(runs, key, every):
+    """Median and interquartile range across seeds, every `every` steps."""
+    a = np.array([r[key] for r in runs])[:, ::every]
+    r = lambda v: [float(f'{x:.4g}') for x in v]
+    return dict(median=r(np.median(a, 0)), q25=r(np.quantile(a, .25, 0)), q75=r(np.quantile(a, .75, 0)))
 
 
-def main(steps=400, batch=16, lr=5.0, seeds=32, rates=(0.5, 1, 2, 5, 10, 20)):
+def main(steps=400, batch=16, seeds=32, rates=(1, 5, 10, 15), every=2):
     log_q, theta0 = problem()
     kl0, lv, lg, _ = moments(log_softmax(theta0), log_q)
     print(f'start: KL {kl0:.3f}, lambda value {lv:.3f}, lambda gradient {lg:.3f}')
-    rules = ['one', 'value', 'gradient', 'value_plugin', 'gradient_plugin']
-    # Training curves at one learning rate.
-    runs = {r: [run(r, log_q, theta0, steps, batch, lr, s) for s in range(seeds)] for r in rules}
-    for r, rs in runs.items():
-        kl = np.array([x['kl'] for x in rs])
-        print(f'lr {lr} {r:16s} median KL at step 50/100/200/{steps}:',
-              [round(float(np.median(kl[:, t])), 4) for t in (50, 100, 200, steps)])
-    # Final KL across learning rates.
-    sweep = {r: [] for r in rules}
+    shown = ['zero', 'one', 'value', 'gradient']
+    rules = shown + ['value_plugin', 'gradient_plugin']      # plug-in rules are printed only
+    curves = {}
     for rate in rates:
-        for r in rules:
-            final = [run(r, log_q, theta0, steps, batch, rate, s)['kl'][-1] for s in range(seeds)]
-            sweep[r].append(dict(median=float(np.median(final)), q25=float(np.quantile(final, .25)), q75=float(np.quantile(final, .75))))
-        print(f'lr {rate}: median final KL', {r: round(sweep[r][-1]['median'], 3) for r in rules})
-    result = dict(setup=dict(actions=K, steps=steps, batch=batch, lr=lr, seeds=seeds, kl0=float(kl0), rates=list(rates)),
-                  runs={r: {k: band(rs, k) for k in ['kl', 'grad_var', 'lam']} for r, rs in runs.items()},
-                  sweep=sweep)
+        runs = {r: [run(r, log_q, theta0, steps, batch, rate, s) for s in range(seeds)] for r in rules}
+        print(f'lr {rate}: median KL at step 100/{steps}',
+              {r: [round(float(np.median([x['kl'][t] for x in rs])), 3) for t in (100, steps)] for r, rs in runs.items()})
+        curves[str(rate)] = {r: {k: band(runs[r], k, every) for k in ['kl', 'grad_var', 'lam']} for r in shown}
+    result = dict(setup=dict(actions=K, steps=steps, batch=batch, seeds=seeds, kl0=float(kl0), rates=list(rates), every=every),
+                  curves=curves)
     path = Path(__file__).resolve().parents[1] / 'static/klviz/lambda.json'
     path.write_text(json.dumps(result, separators=(',', ':')))
     print('wrote', path)
