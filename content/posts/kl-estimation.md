@@ -1,10 +1,10 @@
 ---
-title: "The Structure Behind KL Estimation for Reinforcement Learning"
+title: "The best estimate of KL ≢ the best gradient of KL"
 date: 2026-09-30
 draft: true
 toc: false
 klviz: true
-summary: "k1 in the reward, k2 as a loss and k3 in both give the same gradient of KL. The real choice is a baseline, and the λ that gives the best KL estimate is not the one that gives the best gradient."
+summary: "k1 in the reward, k2 as a loss and k3 differentiated through its expectation give the same gradient of KL. In the gradient, the k_λ family's control variate becomes a baseline, and the λ that gives the best KL estimate is not the one that gives the best gradient."
 ---
 
 KL divergence {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p[\log(p/q)]{{< /klmath >}} is an important quantity in AI. In reinforcement learning for language models, {{< klmath inline=true >}}\mathrm{KL}[\pi_\theta\,\|\,\pi_\mathrm{ref}]{{< /klmath >}} is used as a regularizer to keep a learned policy {{< klmath inline=true >}}\pi_\theta{{< /klmath >}} near a reference policy {{< klmath inline=true >}}\pi_\mathrm{ref}{{< /klmath >}}, and on-policy distillation (OPD) lets a student policy {{< klmath inline=true >}}\pi_\mathrm{student}{{< /klmath >}} learn from a teacher policy {{< klmath inline=true >}}\pi_\mathrm{teacher}{{< /klmath >}} by minimizing {{< klmath inline=true >}}\mathrm{KL}[\pi_\mathrm{student}\,\|\,\pi_\mathrm{teacher}]{{< /klmath >}}.
@@ -39,7 +39,15 @@ Second, variance. {{< klmath inline=true >}}k_3{{< /klmath >}} adds one term to 
 k_3 = k_1 + \left(\frac{q}{p} - 1\right).
 {{< /klmath >}}
 
-Notice that {{< klmath inline=true >}}\mathbb{E}_p[(q/p)-1] = \sum_x p(x)\,\frac{q(x)}{p(x)} - 1 = \sum_x q(x) - 1 = 0{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} plus a *control variate* -- it makes an estimator better when it cancels noise, and worse when it adds noise. {{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance at small KL and much higher variance at large KL:
+Notice that {{< klmath inline=true >}}\mathbb{E}_p[(q/p)-1] = \sum_x p(x)\,\frac{q(x)}{p(x)} - 1 = \sum_x q(x) - 1 = 0{{< /klmath >}}. So {{< klmath inline=true >}}k_3{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} plus a *control variate* -- it makes an estimator better when it cancels noise, and worse when it adds noise.
+
+Nothing forces the control variate to enter with weight one. Since it has mean zero, any multiple of it keeps the estimate unbiased, which gives a family of estimators
+
+{{< klmath >}}
+k_\lambda = k_1 + \lambda\left(\frac{q}{p} - 1\right),
+{{< /klmath >}}
+
+where {{< klmath inline=true >}}\lambda{{< /klmath >}} sets the magnitude of the control variate: {{< klmath inline=true >}}\lambda = 0{{< /klmath >}} is {{< klmath inline=true >}}k_1{{< /klmath >}} and {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} is {{< klmath inline=true >}}k_3{{< /klmath >}}. We will come back to choosing {{< klmath inline=true >}}\lambda{{< /klmath >}}. At {{< klmath inline=true >}}\lambda = 1{{< /klmath >}}, the control variate lowers the variance at small KL and raises it sharply at large KL:
 
 {{< klfigure type="gaussian" subtitle=`$p = \mathcal{N}(\mu, 1)$ · $q = \mathcal{N}(0, 1)$` >}}
 Variance of each estimator, logarithmic scale. Hover to see {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}}.
@@ -87,9 +95,9 @@ We can drop the second term, {{< klmath inline=true >}}\mathbb{E}_p[\nabla\log p
 \nabla\,\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p\!\left[\log\frac{p}{q}\,\nabla\log p\right].
 {{< /klmath >}}
 
-This tidies up the math, but there is more going on. {{< klmath inline=true >}}\mathbb{E}_p[\nabla\log p]{{< /klmath >}} is zero, i.e. *in expectation*. It is *not* true that {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} for any single sample. Dropping {{< klmath inline=true >}}\mathbb{E}_p[\nabla\log p]{{< /klmath >}} leaves the expectation of the gradient unchanged, but changes its variance. Keep an eye on this term: every gradient in this section differs only in how much of it we include.
+This tidies up the math, but there is more going on. {{< klmath inline=true >}}\mathbb{E}_p[\nabla\log p]{{< /klmath >}} is zero, i.e. *in expectation* it won't change the gradient. In other words, {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} plays the same role for the gradient that {{< klmath inline=true >}}\frac{q}{p} - 1{{< /klmath >}} plays for the estimate: a control variate with mean zero, which can be kept in any amount without changing the expectation.
 
-### {{< klmath inline=true >}}\nabla\,\mathrm{KL} \equiv k_1{{< /klmath >}} in the reward {{< klmath inline=true >}}\equiv k_2{{< /klmath >}} as a loss
+### {{< klmath inline=true >}}\lambda=0{{< /klmath >}}: {{< klmath inline=true >}}\nabla\,\mathrm{KL} \equiv k_1{{< /klmath >}} in the reward {{< klmath inline=true >}}\equiv k_2{{< /klmath >}} as a loss
 
 {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward yields the correct gradient. In policy gradient, a sample {{< klmath inline=true >}}x{{< /klmath >}} with a fixed reward {{< klmath inline=true >}}R(x){{< /klmath >}} contributes {{< klmath inline=true >}}R(x)\,\nabla\log p(x){{< /klmath >}}. Notice that directly setting {{< klmath inline=true >}}R(x){{< /klmath >}} as {{< klmath inline=true >}}k_1{{< /klmath >}} yields the correct gradient:
 
@@ -111,18 +119,11 @@ Similarly, using {{< klmath inline=true >}}k_2{{< /klmath >}} directly as a loss
 
 Note that this is *not* the gradient of its expectation {{< klmath inline=true >}}\nabla\mathbb{E}_p[k_2]{{< /klmath >}}.
 
-### The gradients of {{< klmath inline=true >}}k_3{{< /klmath >}}, and {{< klmath inline=true >}}k_\lambda{{< /klmath >}} control variates
+Both {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward and {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss keep none of the {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} term.
 
-Let's introduce a new estimator parameterized by {{< klmath inline=true >}}\lambda{{< /klmath >}}, denoted as {{< klmath inline=true >}}k_\lambda{{< /klmath >}}.
-Since {{< klmath inline=true >}}\mathbb{E}_p[\frac{q}{p} - 1] = \sum_x q - 1 = 0{{< /klmath >}}, any multiple of {{< klmath inline=true >}}\frac{q}{p} - 1{{< /klmath >}} can be added to {{< klmath inline=true >}}k_1{{< /klmath >}} without changing its expectation. We will use this fact to define:
+### From control variate to baseline
 
-{{< klmath >}}
-k_\lambda = \log\frac{p}{q} + \lambda\left(\frac{q}{p} - 1\right).
-{{< /klmath >}}
-
-Notice that {{< klmath inline=true >}}k_3 = k_{\lambda=1}{{< /klmath >}} and {{< klmath inline=true >}}k_1 = k_{\lambda=0}{{< /klmath >}}. In other words, they can be viewed as instantiations of {{< klmath inline=true >}}k_\lambda{{< /klmath >}}, but with different magnitudes of the control variate added, which is controlled by {{< klmath inline=true >}}\lambda{{< /klmath >}}.
-
-Let's compute the gradient of the expectation of {{< klmath inline=true >}}k_\lambda{{< /klmath >}}:
+Now return to the family {{< klmath inline=true >}}k_\lambda = k_1 + \lambda\left(\frac{q}{p} - 1\right){{< /klmath >}} from the estimation section, where {{< klmath inline=true >}}\lambda{{< /klmath >}} sets the magnitude of the estimate's control variate. Since {{< klmath inline=true >}}k_\lambda{{< /klmath >}} is unbiased, we can differentiate its expectation the same way we differentiated KL:
 
 {{< klmath >}}
 \begin{aligned}
@@ -140,7 +141,7 @@ k_\lambda\,\nabla\log p + \nabla k_\lambda &= \Big(\log\frac{p}{q} + \cancel{\la
 \end{aligned}
 {{< /klmath >}}
 
-Notice that the second term {{< klmath inline=true >}}\mathbb{E}_p[ (1 - \lambda)\,\nabla\log p] = 0{{< /klmath >}}{{< klhint >}}Probabilities always sum to one, so their changes sum to zero: {{< klmath inline=true >}}\displaystyle\mathbb{E}_p[\nabla\log p] = \sum_x p\,\frac{\nabla p}{p} = \sum_x \nabla p = \nabla \sum_x p = \nabla 1 = 0.{{< /klmath >}}{{< /klhint >}}. Therefore:
+The second term can be canceled, as {{< klmath inline=true >}}\mathbb{E}_p[ (1 - \lambda)\,\nabla\log p] = 0{{< /klmath >}}{{< klhint >}}Probabilities always sum to one, so their changes sum to zero: {{< klmath inline=true >}}\displaystyle\mathbb{E}_p[\nabla\log p] = \sum_x p\,\frac{\nabla p}{p} = \sum_x \nabla p = \nabla \sum_x p = \nabla 1 = 0.{{< /klmath >}}{{< /klhint >}}. Therefore, it is a control variate:
 
 {{< klmath >}}
 \begin{aligned}
@@ -150,9 +151,10 @@ Notice that the second term {{< klmath inline=true >}}\mathbb{E}_p[ (1 - \lambda
 \end{aligned}
 {{< /klmath >}}
 
-In canceling this second term, notice that it is a control variate. However, the control variate in {{< klmath inline=true >}}k_\lambda{{< /klmath >}} is {{< klmath inline=true >}}\lambda\left(\frac{q}{p} - 1\right){{< /klmath >}}, and in the per-sample gradient of {{< klmath inline=true >}}\mathbb{E}_p[k_\lambda]{{< /klmath >}} it is {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}}. This suggests that optimally estimating the value of KL may not correspond to optimally estimating its gradient.
+Notice that the control variate in {{< klmath inline=true >}}k_\lambda{{< /klmath >}} is {{< klmath inline=true >}}\lambda\left(\frac{q}{p} - 1\right){{< /klmath >}}, but in the {{< klmath inline=true >}}\nabla\mathbb{E}_p[k_\lambda]{{< /klmath >}} it is {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}}. This suggests that choosing {{< klmath inline=true >}}\lambda{{< /klmath >}} to minimize the variance of KL might not minimize the variance of its gradient.
+{{< klmath inline=true >}}k_1{{< /klmath >}} ({{< klmath inline=true >}}\lambda = 0{{< /klmath >}}) keeps all of the {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} term, the same gradient as differentiating KL directly, and {{< klmath inline=true >}}k_3{{< /klmath >}} ({{< klmath inline=true >}}\lambda = 1{{< /klmath >}}) keeps none of it, the same gradient as {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward and {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss.
 
-## Choosing {{< klmath inline=true >}}\lambda{{< /klmath >}}
+## The best estimate is not the best gradient
 
 Schulman's note arrives at {{< klmath inline=true >}}k_3{{< /klmath >}} through this same family. It observes that the variance-minimizing {{< klmath inline=true >}}\lambda{{< /klmath >}} "depends on p and q and is hard to calculate analytically", and takes {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} instead, because then the estimate can never be negative[^schulman].
 
@@ -162,7 +164,7 @@ What if we did want to choose {{< klmath inline=true >}}\lambda{{< /klmath >}}? 
 \lambda_\text{value} = -\frac{\operatorname{Cov}_p\!\left(\log\frac{p}{q},\ \frac{q}{p}\right)}{\operatorname{Var}_p\!\left(\frac{q}{p}\right)}.
 {{< /klmath >}}
 
-But in training we never use the value. We use the gradient {{< klmath inline=true >}}\big(\log\frac{p}{q} + 1 - \lambda\big)\nabla\log p{{< /klmath >}}, and there {{< klmath inline=true >}}\lambda{{< /klmath >}} sets the size of a different control variate {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}}.
+But in training we usually don't use the value of KL. We use its gradient {{< klmath inline=true >}}\big(\log\frac{p}{q} + 1 - \lambda\big)\nabla\log p{{< /klmath >}}, and there {{< klmath inline=true >}}\lambda{{< /klmath >}} sets the size of a different control variate {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}}.
 In policy-gradient language, it shifts the reward {{< klmath inline=true >}}\log\frac{p}{q}{{< /klmath >}} by a *baseline*, the standard tool for reducing a policy gradient's variance. The variance of this gradient is smallest at
 
 {{< klmath >}}
@@ -204,9 +206,9 @@ The two optima move in opposite directions. As {{< klmath inline=true >}}p{{< /k
 Diamonds mark each minimum. Near {{< klmath inline=true >}}q{{< /klmath >}}, both minima sit at {{< klmath inline=true >}}\lambda = 1{{< /klmath >}}, which is {{< klmath inline=true >}}k_3{{< /klmath >}}. Far from {{< klmath inline=true >}}q{{< /klmath >}}, they are on opposite sides of it.
 {{< /klfigure >}}
 
-### A toy: descending KL with each {{< klmath inline=true >}}\lambda{{< /klmath >}}
+### A simple bandit experiment: optimizing KL with each {{< klmath inline=true >}}\lambda{{< /klmath >}}
 
-Does the difference matter in training? Take a softmax policy over 1,000 actions and a fixed reference {{< klmath inline=true >}}q{{< /klmath >}}, start the policy far from {{< klmath inline=true >}}q{{< /klmath >}} ({{< klmath inline=true >}}\mathrm{KL} = 2.43{{< /klmath >}}), and minimize {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} alone by plain SGD on the logits. Each step samples 16 actions and averages {{< klmath inline=true >}}\big(\log\frac{p}{q} + 1 - \lambda\big)\nabla\log p{{< /klmath >}}, with {{< klmath inline=true >}}\lambda{{< /klmath >}} set four ways: {{< klmath inline=true >}}\lambda = 0{{< /klmath >}} ({{< klmath inline=true >}}k_1{{< /klmath >}} differentiated exactly); {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} ({{< klmath inline=true >}}k_3{{< /klmath >}}); {{< klmath inline=true >}}\lambda_\text{value}{{< /klmath >}}; and {{< klmath inline=true >}}\lambda_\text{gradient}{{< /klmath >}}, the last two computed exactly from the current policy. Every choice gives an unbiased gradient, so any difference comes from variance.
+Does the difference matter in training? Let's take a softmax policy over 1,000 actions (i.e. a bandit) and a fixed reference {{< klmath inline=true >}}q{{< /klmath >}}, start the policy far from {{< klmath inline=true >}}q{{< /klmath >}} ({{< klmath inline=true >}}\mathrm{KL} = 2.43{{< /klmath >}}), and minimize {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} alone by plain SGD on the logits. Each step samples 16 actions and averages {{< klmath inline=true >}}\big(\log\frac{p}{q} + 1 - \lambda\big)\nabla\log p{{< /klmath >}}, with {{< klmath inline=true >}}\lambda{{< /klmath >}} set four ways: {{< klmath inline=true >}}\lambda = 0{{< /klmath >}} ({{< klmath inline=true >}}k_1{{< /klmath >}} differentiated exactly); {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} ({{< klmath inline=true >}}k_3{{< /klmath >}}); {{< klmath inline=true >}}\lambda_\text{value}{{< /klmath >}}; and {{< klmath inline=true >}}\lambda_\text{gradient}{{< /klmath >}}, the last two computed exactly from the current policy. Every choice gives an unbiased gradient, so any difference comes from variance.
 
 {{< klfigure type="lambdaDescent" data="klviz/lambda.json" subtitle=`1,000 actions · 16 samples per step · 32 seeds · median and interquartile range` >}}
 KL and gradient variance are exact at each step. A policy that collapses onto a single action stops moving, because {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} is then zero for the only action it samples.
@@ -214,13 +216,13 @@ KL and gradient variance are exact at each step. A policy that collapses onto a 
 
 ## Epilogue
 
-A KL estimator has two jobs in RL.
+A KL estimator has two jobs in RL: reporting a number, and producing a gradient.
 
-**Measuring.** Neither estimator always wins. {{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance near {{< klmath inline=true >}}q{{< /klmath >}}; {{< klmath inline=true >}}k_1{{< /klmath >}} is safer far from {{< klmath inline=true >}}q{{< /klmath >}}; {{< klmath inline=true >}}k_2{{< /klmath >}} is biased.
+**Measuring.** Neither estimator always wins. {{< klmath inline=true >}}k_3{{< /klmath >}} has lower variance near {{< klmath inline=true >}}q{{< /klmath >}}; {{< klmath inline=true >}}k_1{{< /klmath >}} is safer far from {{< klmath inline=true >}}q{{< /klmath >}}; {{< klmath inline=true >}}k_2{{< /klmath >}} is biased. Within the family {{< klmath inline=true >}}k_\lambda{{< /klmath >}}, the variance-minimizing {{< klmath inline=true >}}\lambda{{< /klmath >}} slides from {{< klmath inline=true >}}k_3{{< /klmath >}} toward {{< klmath inline=true >}}k_1{{< /klmath >}} as {{< klmath inline=true >}}p{{< /klmath >}} moves away from {{< klmath inline=true >}}q{{< /klmath >}}.
 
-**Training.** The estimator does not matter. {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward, {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss, and {{< klmath inline=true >}}k_3{{< /klmath >}} in both give the same gradient for every sample. What matters is keeping the right terms, and, if you tune anything, tuning the baseline for the gradient rather than the control variate for the estimate.
+**Training.** {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward, {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss, and {{< klmath inline=true >}}k_3{{< /klmath >}} differentiated through its expectation give the same gradient for every sample. Across {{< klmath inline=true >}}k_\lambda{{< /klmath >}}, the gradient changes only by the zero-mean term {{< klmath inline=true >}}(1 - \lambda)\,\nabla\log p{{< /klmath >}}, a baseline, and the {{< klmath inline=true >}}\lambda{{< /klmath >}} that minimizes its variance sits near {{< klmath inline=true >}}1 + \mathrm{KL}{{< /klmath >}}, on the other side of {{< klmath inline=true >}}k_3{{< /klmath >}}. In the bandit experiment, that {{< klmath inline=true >}}\lambda{{< /klmath >}} kept training at step sizes where the others collapsed.
 
-**Choose a KL estimator for the number it reports, and a baseline for the gradient it produces.**
+**The best estimate of KL is not the best gradient of KL. Choose an estimator for the number it reports, and a baseline for the gradient it produces.**
 
 [^schulman]: John Schulman, ["Approximating KL Divergence"](https://joschu.net/blog/kl-approx.html), 2020.
 [^deepseek]: DeepSeek-AI, ["DeepSeek-V3.2"](https://arxiv.org/html/2512.02556v1#S3.SS1), 2025.
