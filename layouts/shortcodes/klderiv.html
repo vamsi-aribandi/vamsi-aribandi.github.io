@@ -1,4 +1,4 @@
 <details class="kl-code kl-deriv">
-  <summary>{{ partial "kl-label.html" (.Get "title" | default "Derivation") }}<span class="kl-code-tag">Derivation</span></summary>
+  <summary>{{ partial "kl-label.html" (.Get "title" | default "Derivation") }}<span class="kl-code-tag">{{ .Get "tag" | default "Derivation" }}</span></summary>
   <div class="kl-deriv-body">{{ .Inner | .Page.RenderString }}</div>
 </details>

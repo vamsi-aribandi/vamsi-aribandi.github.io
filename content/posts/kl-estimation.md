@@ -29,7 +29,7 @@ We can use these functions to estimate KL, but how should we use them to *minimi
 
 ## Estimating the value of KL
 
-Before trying to minimize KL, let's compare the estimators on two Gaussians, {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}. Here, {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} is exactly {{< klmath inline=true >}}\mu^2/2{{< /klmath >}}{{< klhint >}}The two Gaussian densities have the same normalizing constant, so {{< klmath inline=true >}}\displaystyle\log\frac{p}{q} = -\frac{(x-\mu)^2}{2} + \frac{x^2}{2} = \mu x - \frac{\mu^2}{2}{{< /klmath >}}. Taking the expectation under {{< klmath inline=true >}}p{{< /klmath >}}, where {{< klmath inline=true >}}\mathbb{E}_p[x] = \mu{{< /klmath >}}, gives {{< klmath inline=true >}}\displaystyle\mathrm{KL}[p\,\|\,q] = \mu\mathbb{E}_p[x] - \frac{\mu^2}{2} = \frac{\mu^2}{2}{{< /klmath >}}.{{< /klhint >}}.
+Before trying to minimize KL, let's compare the estimators on two Gaussians, {{< klmath inline=true >}}p = \mathcal{N}(\mu, 1){{< /klmath >}} and {{< klmath inline=true >}}q = \mathcal{N}(0, 1){{< /klmath >}}. Here, {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} is exactly {{< klmath inline=true >}}\mu^2/2{{< /klmath >}}{{< klhint >}}{{< klmath inline=true >}}\displaystyle\log\frac{p}{q} = -\frac{(x-\mu)^2}{2} + \frac{x^2}{2} = \mu x - \frac{\mu^2}{2}{{< /klmath >}}. Taking the expectation under {{< klmath inline=true >}}p{{< /klmath >}}, where {{< klmath inline=true >}}\mathbb{E}_p[x] = \mu{{< /klmath >}}, gives {{< klmath inline=true >}}\displaystyle\mathrm{KL}[p\,\|\,q] = \mu\mathbb{E}_p[x] - \frac{\mu^2}{2} = \frac{\mu^2}{2}{{< /klmath >}}.{{< /klhint >}}.
 
 Let's first examine bias. An estimator is unbiased when its expectation equals the true KL.
 
@@ -259,10 +259,92 @@ A KL estimator can be used to either estimate KL, or estimate the gradient of KL
 
 Practically, this doesn't change much for the LLM status-quo of using {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward or {{< klmath inline=true >}}k_2{{< /klmath >}} as a loss, but it is useful to understand the distinction.
 
+## Appendix
+
+Mixing up "the estimator" with "how the estimator enters the gradient" is prevalent despite others pointing out these pitfalls before[^tang][^rethinking]. This shows up in popular code and reports: open-source RL frameworks[^trl][^nemorl][^openinstruct], the Composer 2 report[^cursor], and DeepSeek's GRPO papers[^deepseekmath][^r1].
+
+{{< klderiv title="Libraries that were wrong: TRL, NeMo-RL, OpenInstruct" tag="Note" >}}
+Popular RL libraries computed {{< klmath inline=true >}}k_3{{< /klmath >}} for each sampled token and added it to the loss: Hugging Face [TRL](https://github.com/huggingface/trl/pull/6503), NVIDIA [NeMo-RL](https://github.com/NVIDIA-NeMo/RL/pull/2506), and AI2 [open-instruct](https://github.com/allenai/open-instruct/blob/11826255077617a46919ce75cadf1f3d53f30dac/open_instruct/grpo_utils.py). Autograd then differentiates the sample, {{< klmath inline=true >}}\nabla k_3{{< /klmath >}}, instead of the expectation, {{< klmath inline=true >}}\nabla\mathbb{E}_p[k_3]{{< /klmath >}}.
+
+TRL and NeMo-RL have since fixed their defaults. At the time of writing, open-instruct's GRPO still uses it by default.
+
+Let's see what their implementation was actually optimizing. The gradient of the expectation has two terms, and their loss kept only one:
+
+{{< klmath >}}
+\nabla\mathbb{E}_p[k_3] = \mathbb{E}_p\big[\underbrace{k_3\,\nabla\log p}_{\text{dropped}} + \underbrace{\nabla k_3}_{\text{kept}}\big].
+{{< /klmath >}}
+
+The kept term is the gradient of *forward* KL instead of *reverse* KL:
+
+{{< klmath >}}
+\mathbb{E}_p[\nabla k_3] = \mathbb{E}_p\!\left[\Big(1 - \frac{q}{p}\Big)\nabla\log p\right] = \underbrace{\mathbb{E}_p[\nabla\log p]}_{0} - \sum_x q\,\nabla\log p = \nabla\,\mathrm{KL}[q\,\|\,p].
+{{< /klmath >}}
+
+The mistake can be quiet because forward KL is also minimized at {{< klmath inline=true >}}p = q{{< /klmath >}}, so the penalty still pulls toward the reference. But each sample is weighted by {{< klmath inline=true >}}1 - q/p{{< /klmath >}}, which is huge for a token the policy rarely picks but the reference likes.
+{{< /klderiv >}}
+
+{{< klderiv title="DeepSeek's original mistake corrected in V3.2" tag="Note" >}}
+[DeepSeekMath](https://arxiv.org/abs/2402.03300), which introduced GRPO, makes the same mistake as the libraries: it adds a per-token {{< klmath inline=true >}}k_3{{< /klmath >}} to the loss. Its appendix even writes out the resulting gradient coefficient for each token,
+
+{{< klmath >}}
+\hat{A}_t + \beta\left(\frac{q}{p} - 1\right),
+{{< /klmath >}}
+
+which is the advantage minus {{< klmath inline=true >}}\beta(1 - q/p){{< /klmath >}}, the forward-KL gradient from the previous note. [DeepSeek-V3](https://arxiv.org/abs/2412.19437) and [DeepSeek-R1](https://arxiv.org/abs/2501.12948) reuse the same term.
+
+[DeepSeek-V3.2](https://arxiv.org/html/2512.02556v1#S3.SS1) puts {{< klmath inline=true >}}k_3{{< /klmath >}} inside the expectation the objective takes over sampled responses, so its KL term is {{< klmath inline=true >}}\mathbb{E}_p[k_3]{{< /klmath >}}. (Since the samples come from an older policy, they write this with an importance ratio, {{< klmath inline=true >}}\mathbb{E}_{p_\mathrm{old}}[\frac{p}{p_\mathrm{old}}k_3]{{< /klmath >}}.) As the gradient section showed, differentiating the expectation of {{< klmath inline=true >}}k_3{{< /klmath >}} gives the correct gradient, the same as {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward:
+
+{{< klmath >}}
+k_3\,\nabla\log p + \nabla k_3 = \Big(\log\frac{p}{q} + \cancel{\frac{q}{p}} - \cancel{1}\Big)\nabla\log p + \Big(\cancel{1} - \cancel{\frac{q}{p}}\Big)\nabla\log p = \log\frac{p}{q}\,\nabla\log p.
+{{< /klmath >}}
+
+Their stated motivation, that the gradient of {{< klmath inline=true >}}k_3{{< /klmath >}} has unbounded weights when {{< klmath inline=true >}}p \ll q{{< /klmath >}}, is the {{< klmath inline=true >}}q/p{{< /klmath >}} in {{< klmath inline=true >}}\nabla k_3{{< /klmath >}}, which cancels once the score term is included.
+{{< /klderiv >}}
+
+{{< klderiv title="Composer 2's wrong reason for the correct implementation" tag="Note" >}}
+The [Composer 2 report](https://arxiv.org/abs/2603.24477) (Section 4.1) notes that {{< klmath inline=true >}}k_3{{< /klmath >}} is unbiased with low variance when the two policies are close, but its variance grows quickly as they drift apart, so they "use the standard estimator {{< klmath inline=true >}}k_1{{< /klmath >}} instead."
+
+It's unclear how they use either estimator, but this sounds like it implies {{< klmath inline=true >}}k_3{{< /klmath >}} in the reward is a valid choice with higher variance. It's not. With {{< klmath inline=true >}}R = k_3{{< /klmath >}}, the expected policy gradient is
+
+{{< klmath >}}
+\begin{aligned}
+\mathbb{E}_p[k_3\,\nabla\log p] &= \mathbb{E}_p\!\left[\log\frac{p}{q}\,\nabla\log p\right] + \mathbb{E}_p\!\left[\Big(\frac{q}{p} - 1\Big)\nabla\log p\right]\\
+&= \nabla\,\mathrm{KL}[p\,\|\,q] + \sum_x q\,\nabla\log p\\
+&= \nabla\,\mathrm{KL}[p\,\|\,q] - \nabla\,\mathrm{KL}[q\,\|\,p],
+\end{aligned}
+{{< /klmath >}}
+
+which is not a divergence and is unbounded below: the policy can lower it forever by moving mass away from actions the reference likes. {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward is the right choice, but because its gradient is correct, not because its estimate has lower variance.
+{{< /klderiv >}}
+
+{{< klderiv title="Token-level KL is not sequence-level KL" tag="Note" >}}
+For a language model, a response {{< klmath inline=true >}}y = (y_1, \dots, y_T){{< /klmath >}} is a sequence of tokens, and its log ratio is a sum over tokens, {{< klmath inline=true >}}\log\frac{p(y)}{q(y)} = \sum_t \ell_t{{< /klmath >}} with {{< klmath inline=true >}}\ell_t = \log\frac{p(y_t \mid s_t)}{q(y_t \mid s_t)}{{< /klmath >}}. The gradient of the sequence-level KL is
+
+{{< klmath >}}
+\nabla\,\mathrm{KL}[p\,\|\,q] = \mathbb{E}_p\!\left[\sum_t \Big(\sum_{t' \ge t} \ell_{t'}\Big)\nabla\log p(y_t \mid s_t)\right].
+{{< /klmath >}}
+
+Earlier terms {{< klmath inline=true >}}\ell_{t'}{{< /klmath >}} with {{< klmath inline=true >}}t' < t{{< /klmath >}} drop out, since {{< klmath inline=true >}}\nabla\log p(y_t \mid s_t){{< /klmath >}} has mean zero given everything before it. Each token is weighted by the KL of the rest of the response, because choosing {{< klmath inline=true >}}y_t{{< /klmath >}} changes the contexts, and so the KL, of every later token. {{< klmath inline=true >}}k_1{{< /klmath >}} in the reward, summed into returns as in PPO, gives exactly this.
+
+A per-token loss, whether {{< klmath inline=true >}}k_2{{< /klmath >}} or DeepSeek-V3.2's {{< klmath inline=true >}}k_3{{< /klmath >}}, only gives the {{< klmath inline=true >}}t' = t{{< /klmath >}} term:
+
+{{< klmath >}}
+\mathbb{E}_p\!\left[\sum_t \ell_t\,\nabla\log p(y_t \mid s_t)\right].
+{{< /klmath >}}
+
+This is the gradient of each token's KL with the contexts held fixed. It ignores how a token steers the rest of the response, which [Tang and Munos](https://arxiv.org/abs/2506.09477) point out is only part of the sequence-level gradient.
+
+This is often intentional. A per-token KL acts as a local constraint on each next-token distribution, and it has lower variance than weighting each token by a sum over the rest of the response. It also does not penalize a token for the KL of the tokens that follow it, including the choice to keep generating. DeepSeek-R1 chose it for that last reason: PPO's per-token KL reward "penalizes the cumulative KL divergence, which may implicitly penalize the length of the response and thereby prevent the model's response length from increasing."
+{{< /klderiv >}}
+
 [^schulman]: John Schulman, ["Approximating KL Divergence"](https://joschu.net/blog/kl-approx.html), 2020.
 [^deepseek]: DeepSeek-AI, ["DeepSeek-V3.2"](https://arxiv.org/html/2512.02556v1#S3.SS1), 2025.
 [^opd]: Thinking Machines Lab, ["On-Policy Distillation"](https://thinkingmachines.ai/blog/on-policy-distillation/), 2025.
 [^cursor]: Cursor Research, ["Composer 2 Technical Report"](https://arxiv.org/abs/2603.24477), 2026, Section 4.1.
 [^tang]: Yunhao Tang and Rémi Munos, ["On a few pitfalls in KL divergence gradient estimation for RL"](https://arxiv.org/abs/2506.09477), 2025.
 [^rethinking]: Kezhao Liu et al., ["Rethinking KL Regularization in RLHF: From Value Estimation to Gradient Optimization"](https://arxiv.org/abs/2510.01555), 2025.
-[^wang]: Xihuai Wang, ["Choosing KL Estimators in RL: From Value Unbiasedness to Gradient Correctness"](https://xihuai18.github.io/reinforcement-learning/2025/12/01/kl-estimators-en.html), 2025.
+[^trl]: Hugging Face TRL, ["Default `use_bias_correction_kl=True` in GRPOConfig"](https://github.com/huggingface/trl/pull/6503), 2026.
+[^nemorl]: NVIDIA NeMo-RL, ["fix: KL backward in GRPO"](https://github.com/NVIDIA-NeMo/RL/pull/2506), 2026.
+[^openinstruct]: AI2 open-instruct, [`grpo_utils.py`](https://github.com/allenai/open-instruct/blob/11826255077617a46919ce75cadf1f3d53f30dac/open_instruct/grpo_utils.py), 2026.
+[^deepseekmath]: Zhihong Shao et al., ["DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models"](https://arxiv.org/abs/2402.03300), 2024, Section 4.1 and Appendix A.1.6.
+[^r1]: DeepSeek-AI, ["DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning"](https://arxiv.org/abs/2501.12948), 2025.

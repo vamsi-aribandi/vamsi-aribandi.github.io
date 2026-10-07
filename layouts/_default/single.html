@@ -1,0 +1,13 @@
+{{ define "main" }}
+  <h1>{{ .Title }}</h1>
+  {{ partial "single/author.html" . }}
+  {{ partial "main/dates.html" . }}
+  {{ partial "single/translation_list.html" . }}
+  {{ partial "single/toc.html" . }}
+  {{- /* Separate adjacent footnote references with commas, so [^a][^b] reads as ¹,² rather than ¹². */}}
+  {{ replaceRE `(</a></sup>)(<sup id="fnref)` `$1<sup>,</sup>$2` .Content | safeHTML }}
+  {{ partial "single/terms.html" (dict "taxonomy" "tags" "page" .) }}
+  {{ partial "single/terms.html" (dict "taxonomy" "categories" "page" .) }}
+  {{ partial "single/page_nav.html" . }}
+  {{ partial "single/single-end.html" . }}
+{{ end }}

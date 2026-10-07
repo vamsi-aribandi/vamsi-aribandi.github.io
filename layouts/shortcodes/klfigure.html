@@ -1,8 +1,11 @@
+{{- /* No blank lines or indented lines in the output, so the figure survives being re-rendered as Markdown inside klderiv. */ -}}
 <figure class="kl-figure">
-  <div class="kl-viz" data-chart="{{ .Get "type" }}" data-source="{{ .Get "data" | default "klviz/data.json" | relURL }}">
-    {{ with .Get "subtitle" }}<div class="kl-head"><p>{{ partial "kl-label.html" . }}{{ with $.Get "subtitle2" }}<br>{{ partial "kl-label.html" . }}{{ end }}</p></div>{{ end }}
-    <div class="kl-interactive"><p class="kl-loading">Loading interactive figure…</p></div>
-    <noscript><p>Enable JavaScript for this figure. The numerical results and Python code are included in the article.</p></noscript>
-  </div>
-  {{ with (trim .Inner " \n\r\t") }}<figcaption>{{ . | markdownify }}</figcaption>{{ end }}
+<div class="kl-viz" data-chart="{{ .Get "type" }}" data-source="{{ .Get "data" | default "klviz/data.json" | relURL }}">
+{{- with .Get "subtitle" }}<div class="kl-head"><p>{{ partial "kl-label.html" . }}{{ with $.Get "subtitle2" }}<br>{{ partial "kl-label.html" . }}{{ end }}</p></div>{{ end }}
+<div class="kl-interactive"><p class="kl-loading">Loading interactive figure…</p></div>
+<noscript><p>Enable JavaScript for this figure. The numerical results and Python code are included in the article.</p></noscript>
+</div>
+{{- with (trim .Inner " \n\r\t") }}
+<figcaption>{{ . | markdownify }}</figcaption>
+{{- end }}
 </figure>
