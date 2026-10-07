@@ -1,5 +1,5 @@
 ---
-title: "The best estimate of KL ≢ the best estimate its gradient"
+title: "The best estimate of KL ≢ the best estimate of its gradient"
 date: 2026-10-02
 draft: false
 toc: false
@@ -245,7 +245,9 @@ Diamonds mark each minimum. Near {{< klmath inline=true >}}q{{< /klmath >}}, bot
 
 ### A simple bandit experiment: optimizing KL with each {{< klmath inline=true >}}\lambda{{< /klmath >}}
 
-Does the difference matter in training? Let's take a softmax policy over 1,000 actions (i.e. a bandit) and a fixed reference {{< klmath inline=true >}}q{{< /klmath >}}, start the policy far from {{< klmath inline=true >}}q{{< /klmath >}} ({{< klmath inline=true >}}\mathrm{KL} = 2.43{{< /klmath >}}), and minimize {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} alone by plain SGD on the logits. Each step samples 16 actions and averages {{< klmath inline=true >}}\big(\log\frac{p}{q} + 1 - \lambda\big)\nabla\log p{{< /klmath >}}, with {{< klmath inline=true >}}\lambda{{< /klmath >}} set four ways: {{< klmath inline=true >}}\lambda = 0{{< /klmath >}} ({{< klmath inline=true >}}k_1{{< /klmath >}} differentiated exactly); {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} ({{< klmath inline=true >}}k_3{{< /klmath >}}); {{< klmath inline=true >}}\lambda_\text{value}{{< /klmath >}}; and {{< klmath inline=true >}}\lambda_\text{gradient}{{< /klmath >}}, the last two computed exactly from the current policy. Every choice gives an unbiased gradient, so any difference comes from variance.
+Does the difference matter in training?
+
+Let's take a softmax policy over 1,000 actions (i.e. a bandit) and a fixed reference {{< klmath inline=true >}}q{{< /klmath >}}, and initializing the policy {{< klmath inline=true >}}q{{< /klmath >}} far from {{< klmath inline=true >}}q{{< /klmath >}} ({{< klmath inline=true >}}\mathrm{KL} = 2.43{{< /klmath >}}). We'll minimize {{< klmath inline=true >}}\mathrm{KL}[p\,\|\,q]{{< /klmath >}} alone by plain SGD on the logits using policy gradient. Each step samples 16 actions and averages {{< klmath inline=true >}}\big(\log\frac{p}{q} + 1 - \lambda\big)\nabla\log p{{< /klmath >}}, with {{< klmath inline=true >}}\lambda{{< /klmath >}} set four ways: {{< klmath inline=true >}}\lambda = 0{{< /klmath >}} ({{< klmath inline=true >}}k_1{{< /klmath >}} differentiated exactly); {{< klmath inline=true >}}\lambda = 1{{< /klmath >}} ({{< klmath inline=true >}}k_3{{< /klmath >}}); {{< klmath inline=true >}}\lambda_\text{value}{{< /klmath >}}; and {{< klmath inline=true >}}\lambda_\text{gradient}{{< /klmath >}}, the last two computed exactly from the current policy. Every choice gives an unbiased gradient, so any difference comes from variance.
 
 {{< klfigure type="lambdaDescent" data="klviz/lambda.json" >}}
 KL and gradient variance are exact at each step. A policy that collapses onto a single action stops moving, because {{< klmath inline=true >}}\nabla\log p{{< /klmath >}} is then zero for the only action it samples.
