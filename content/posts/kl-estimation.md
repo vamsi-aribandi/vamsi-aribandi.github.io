@@ -264,9 +264,7 @@ Practically, this doesn't change much for the LLM status-quo of using {{< klmath
 Mixing up "the estimator" with "how the estimator enters the gradient" is prevalent despite others pointing out these pitfalls before ([Tang and Munos](https://arxiv.org/abs/2506.09477); [Liu et al.](https://arxiv.org/abs/2510.01555)). This shows up in popular code and reports: open-source RL frameworks, the Composer 2 report, and DeepSeek's GRPO papers.
 
 {{< klderiv title="Libraries that were wrong: TRL, NeMo-RL, OpenInstruct" tag="Note" >}}
-Popular RL libraries computed {{< klmath inline=true >}}k_3{{< /klmath >}} for each sampled token and added it to the loss: Hugging Face [TRL](https://github.com/huggingface/trl/pull/6503), NVIDIA [NeMo-RL](https://github.com/NVIDIA-NeMo/RL/pull/2506), and AI2 [open-instruct](https://github.com/allenai/open-instruct/blob/11826255077617a46919ce75cadf1f3d53f30dac/open_instruct/grpo_utils.py). This means we're using {{< klmath inline=true >}}\nabla k_3{{< /klmath >}} instead of the expectation {{< klmath inline=true >}}\nabla\mathbb{E}_p[k_3]{{< /klmath >}}, which is wrong.
-
-TRL and NeMo-RL have since fixed their defaults. At the time of writing, open-instruct's GRPO still uses it by default.
+Popular RL libraries computed {{< klmath inline=true >}}k_3{{< /klmath >}} for each sampled token and added it to the loss: Hugging Face [TRL](https://github.com/huggingface/trl/pull/6503), NVIDIA [NeMo-RL](https://github.com/NVIDIA-NeMo/RL/pull/2506), and AI2 [open-instruct](https://github.com/allenai/open-instruct/blob/11826255077617a46919ce75cadf1f3d53f30dac/open_instruct/grpo_utils.py). This uses {{< klmath inline=true >}}\nabla k_3{{< /klmath >}} instead of {{< klmath inline=true >}}\nabla\mathbb{E}_p[k_3]{{< /klmath >}}, which is wrong.
 
 Let's see what their implementation was actually optimizing. The gradient of the expectation has two terms, and they kept only one:
 
@@ -281,25 +279,34 @@ The kept term is the gradient of *forward* KL instead of *reverse* KL:
 {{< /klmath >}}
 
 The mistake can be quiet because forward KL is also minimized at {{< klmath inline=true >}}p = q{{< /klmath >}}, so the penalty still pulls toward the reference. But each sample is weighted by {{< klmath inline=true >}}1 - q/p{{< /klmath >}}, which is huge for a token the policy rarely picks but the reference likes.
+
+TRL and NeMo-RL have since fixed their defaults. At the time of writing, open-instruct's GRPO still uses it by default.
 {{< /klderiv >}}
 
 {{< klderiv title="DeepSeek's original mistake corrected in V3.2" tag="Note" >}}
-[DeepSeekMath](https://arxiv.org/abs/2402.03300), which introduced GRPO, makes the same mistake as the libraries: it adds a per-token {{< klmath inline=true >}}k_3{{< /klmath >}} to the loss. Its appendix even writes out the resulting gradient coefficient for each token,
+[DeepSeekMath](https://arxiv.org/abs/2402.03300), which introduced GRPO, made the same mistake as the libraries: it added a per-token {{< klmath inline=true >}}k_3{{< /klmath >}} to the loss. Appendix A.1.6 writes out the resulting gradient coefficient for each token,
 
 {{< klmath >}}
 \hat{A}_t + \beta\left(\frac{q}{p} - 1\right),
 {{< /klmath >}}
 
-which is the advantage minus {{< klmath inline=true >}}\beta(1 - q/p){{< /klmath >}}, the forward-KL gradient from the previous note. [DeepSeek-V3](https://arxiv.org/abs/2412.19437) and [DeepSeek-R1](https://arxiv.org/abs/2501.12948) reuse the same term.
+which is the advantage minus the forward-KL gradient from the previous note. [DeepSeek-V3](https://arxiv.org/abs/2412.19437) and [DeepSeek-R1](https://arxiv.org/abs/2501.12948) reuse this form.
 
-[DeepSeek-V3.2](https://arxiv.org/html/2512.02556v1#S3.SS1) puts {{< klmath inline=true >}}k_3{{< /klmath >}} *inside* the expectation the objective takes over sampled responses, which is correct.
+[DeepSeek-V3.2](https://arxiv.org/pdf/2512.02556v1) corrects this mistake by putting {{< klmath inline=true >}}k_3{{< /klmath >}} *inside* the expectation the objective takes over sampled responses, which is correct (Section 3.1):
+
+{{< klmath >}}
+\begin{gathered}
+\mathcal{J}_\mathrm{GRPO} = \mathbb{E}_{\{o_i\} \sim p_\mathrm{old}}\!\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}\min\!\big(r_{i,t}\hat{A}_{i,t},\ \mathrm{clip}(r_{i,t}, 1-\varepsilon, 1+\varepsilon)\,\hat{A}_{i,t}\big) - \beta\,\mathbb{D}_\mathrm{KL}\right],\\[6pt]
+\mathbb{E}_{p_\mathrm{old}}[\mathbb{D}_\mathrm{KL}] = \mathbb{E}_{p_\mathrm{old}}\!\left[\frac{p}{p_\mathrm{old}}\left(\frac{q}{p} - \log\frac{q}{p} - 1\right)\right] = \mathbb{E}_{p_\mathrm{old}}\!\left[\frac{p}{p_\mathrm{old}}\,k_3\right] = \mathbb{E}_p[k_3].
+\end{gathered}
+{{< /klmath >}}
 
 {{< /klderiv >}}
 
 {{< klderiv title="Composer 2's wrong reason for the correct implementation" tag="Note" >}}
 The [Composer 2 report](https://arxiv.org/abs/2603.24477) (Section 4.1) notes that {{< klmath inline=true >}}k_3{{< /klmath >}} is unbiased with low variance when the two policies are close, but its variance grows quickly as they drift apart, so they "use the standard estimator {{< klmath inline=true >}}k_1{{< /klmath >}} instead."
 
-It's unclear how they use either estimator, but the report seems to imply they are comparing {{< klmath inline=true >}}k_1{{< /klmath >}} in reward with {{< klmath inline=true >}}k_3{{< /klmath >}} in reward. {{< klmath inline=true >}}k_3{{< /klmath >}} in reward is not a valid choice. With {{< klmath inline=true >}}R = k_3{{< /klmath >}}, the expected policy gradient is
+It's unclear how they use either estimator. However, since {{< klmath inline=true >}}k_1{{< /klmath >}} is only correct when it's used in reward, we can assume they are comparing {{< klmath inline=true >}}k_1{{< /klmath >}} in reward with {{< klmath inline=true >}}k_3{{< /klmath >}} in reward. {{< klmath inline=true >}}k_3{{< /klmath >}} in reward is not a valid choice. With {{< klmath inline=true >}}R = k_3{{< /klmath >}}, the expected policy gradient is
 
 {{< klmath >}}
 \begin{aligned}
