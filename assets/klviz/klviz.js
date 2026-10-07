@@ -785,10 +785,46 @@
     };
     draw();return draw;
   }
+  function initHints() {
+    let active;
+    const close=()=>{ active?.removeAttribute('data-open'); active=null; };
+    const position=()=>{
+      if (!active) return;
+      const body=active.querySelector('.kl-hint-body'), anchor=active.querySelector('.kl-hint-label').getBoundingClientRect();
+      // Account for the visible viewport when zoomed or the mobile keyboard is open.
+      const viewport=window.visualViewport, margin=10, gap=6;
+      const x=viewport?.offsetLeft || 0, y=viewport?.offsetTop || 0;
+      const width=viewport?.width || document.documentElement.clientWidth;
+      const height=viewport?.height || window.innerHeight;
+      body.style.maxWidth=`${Math.max(0,width-2*margin)}px`;
+      body.style.maxHeight=`${Math.max(0,height-2*margin)}px`;
+      const w=body.offsetWidth, h=body.offsetHeight;
+      const left=Math.max(x+margin,Math.min(x+width-margin-w,(anchor.left+anchor.right-w)/2));
+      const preferred=anchor.bottom+gap+h<=y+height-margin ? anchor.bottom+gap : anchor.top-gap-h;
+      const top=Math.max(y+margin,Math.min(y+height-margin-h,preferred));
+      body.style.left=`${left}px`;body.style.top=`${top}px`;
+    };
+    const show=hint=>{ close();active=hint;hint.setAttribute('data-open','');position(); };
+    document.querySelectorAll('.kl-hint').forEach(hint=>{
+      hint.setAttribute('data-positioned','');
+      hint.addEventListener('pointerenter',event=>{if(event.pointerType!=='touch') show(hint);});
+      hint.addEventListener('pointerleave',()=>{if(active===hint && !hint.contains(document.activeElement)) close();});
+      hint.addEventListener('focusin',()=>show(hint));
+      hint.addEventListener('focusout',event=>{if(active===hint && !hint.contains(event.relatedTarget)) close();});
+      hint.addEventListener('click',()=>show(hint));
+    });
+    document.addEventListener('pointerdown',event=>{if(active && !active.contains(event.target)) close();});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape') close();});
+    window.addEventListener('scroll',position,{capture:true,passive:true});
+    window.addEventListener('resize',position);
+    window.visualViewport?.addEventListener('resize',position);
+    window.visualViewport?.addEventListener('scroll',position);
+  }
   async function init() {
     document.querySelectorAll('.kl-math').forEach(node=>{
       if (window.katex) window.katex.render(node.textContent.trim(),node,{displayMode:node.dataset.display!=='false',throwOnError:false,strict:'warn'});
     });
+    initHints();
     document.querySelectorAll('.kl-code-body').forEach(body=>{
       const button=el('button','kl-copy',body,'Copy code');button.type='button';
       button.addEventListener('click',async()=>{

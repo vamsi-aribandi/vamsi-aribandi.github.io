@@ -157,6 +157,9 @@
 .kl-hint-body { display: none; position: absolute; z-index: 30; left: 50%; top: 1.7em; transform: translateX(-50%);
   width: max-content; max-width: min(360px, 88vw); padding: 10px 12px; border: 1px solid var(--kl-line); border-radius: 8px;
   background: var(--kl-bg); color: var(--kl-ink); font-size: .82rem; line-height: 1.6; box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: normal; }
-.kl-hint:hover .kl-hint-body, .kl-hint:focus .kl-hint-body, .kl-hint:focus-within .kl-hint-body { display: block; }
+.kl-hint:not([data-positioned]):hover .kl-hint-body, .kl-hint:not([data-positioned]):focus .kl-hint-body,
+.kl-hint:not([data-positioned]):focus-within .kl-hint-body, .kl-hint[data-open] .kl-hint-body { display: block; }
+.kl-hint[data-positioned] .kl-hint-body { position: fixed; transform: none; box-sizing: border-box;
+  overflow: auto; overflow-wrap: anywhere; overscroll-behavior: contain; }
 .kl-readouts-4 { grid-template-columns: repeat(4, 1fr); }
 @media (max-width:560px) { .kl-readouts-4 { grid-template-columns: repeat(2, 1fr); } }
