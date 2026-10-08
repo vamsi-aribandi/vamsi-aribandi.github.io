@@ -23,7 +23,7 @@ k_3(x) &= \log\frac{p(x)}{q(x)} + \frac{q(x)}{p(x)} - 1
 \end{aligned}
 {{< /klmath >}}
 
-You might recall these estimators from an excellent [post by John Schulman](https://joschu.net/blog/kl-approx.html). It shows that {{< klmath inline=true >}}k_3{{< /klmath >}} in particular is unbiased like {{< klmath inline=true >}}k_1{{< /klmath >}} and never negative like {{< klmath inline=true >}}k_2{{< /klmath >}}, with lower variance.
+You might recall these estimators from an excellent [post by John Schulman](//joschu.net/blog/kl-approx.html). It shows that {{< klmath inline=true >}}k_3{{< /klmath >}} in particular is unbiased like {{< klmath inline=true >}}k_1{{< /klmath >}} and never negative like {{< klmath inline=true >}}k_2{{< /klmath >}}, with lower variance.
 
 We can use these functions to estimate KL, but how should we use them to *minimize* it? Let's explore how to minimize reverse KL ({{< klmath inline=true >}}\min_p\mathrm{KL}[p\,\|\,q]{{< /klmath >}}), since it is relevant for reinforcement learning.
 
@@ -196,7 +196,7 @@ In RL language, we are shifting the reward ({{< klmath inline=true >}}\log\frac{
 
 ## The best estimate does not yield the best gradient
 
-[Schulman's note](https://joschu.net/blog/kl-approx.html) says that choosing {{< klmath inline=true >}}\lambda{{< /klmath >}} to minimize the variance of {{< klmath inline=true >}}k_\lambda{{< /klmath >}} depends on {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}} and is hard to calculate analytically. Instead, it uses {{< klmath inline=true >}}\lambda = 1{{< /klmath >}}, because then the estimate can never be negative.
+[Schulman's note](//joschu.net/blog/kl-approx.html) says that choosing {{< klmath inline=true >}}\lambda{{< /klmath >}} to minimize the variance of {{< klmath inline=true >}}k_\lambda{{< /klmath >}} depends on {{< klmath inline=true >}}p{{< /klmath >}} and {{< klmath inline=true >}}q{{< /klmath >}} and is hard to calculate analytically. Instead, it uses {{< klmath inline=true >}}\lambda = 1{{< /klmath >}}, because then the estimate can never be negative.
 
 What if we wanted to choose {{< klmath inline=true >}}\lambda{{< /klmath >}} optimally? The variance of {{< klmath inline=true >}}k_\lambda{{< /klmath >}} is quadratic in {{< klmath inline=true >}}\lambda{{< /klmath >}}, smallest at
 
